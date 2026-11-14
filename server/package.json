@@ -9,6 +9,8 @@
   "scripts": {
     "start": "node relayer.mjs",
     "live": "node relayer.mjs --live",
-    "selftest": "node selftest.mjs"
+    "selftest": "node selftest.mjs",
+    "world": "node world_server.mjs",
+    "selftest:world": "node selftest_world.mjs"
   }
 }
