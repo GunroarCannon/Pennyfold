@@ -1,0 +1,58 @@
+; Engine configuration file.
+; It's best edited using the editor UI and not directly,
+; since the parameters that go here are not all obvious.
+;
+; Format:
+;   [section] ; section goes between []
+;   param=value ; assign values to parameters
+
+config_version=5
+
+[application]
+
+config/name="Pennyfold"
+config/description="A cardboard town where NPCs eat, work, trade and fight, and every coin moves."
+run/main_scene="res://scenes/splash.tscn"
+boot_splash/bg_color=Color(0.62, 0.44, 0.27, 1)
+boot_splash/image="res://assets/splash/boot.png"
+boot_splash/fullsize=true
+boot_splash/show_image=true
+config/features=PackedStringArray("4.7", "GL Compatibility")
+
+[autoload]
+
+Economy="*res://scripts/economy.gd"
+Game="*res://scripts/game.gd"
+Chain="*res://scripts/chain.gd"
+Sfx="*res://scripts/sfx.gd"
+Boot="*res://scripts/boot.gd"
+
+[display]
+
+window/size/viewport_width=1280
+window/size/viewport_height=720
+window/stretch/mode="canvas_items"
+
+[rendering]
+
+renderer/rendering_method="gl_compatibility"
+renderer/rendering_method.mobile="gl_compatibility"
+
+[shader_globals]
+
+bend_origin={
+"type": "vec3",
+"value": Vector3(0, 0, 0)
+}
+bend_fwd={
+"type": "vec2",
+"value": Vector2(0, -1)
+}
+bend_k={
+"type": "float",
+"value": 0.0095
+}
+bend_ks={
+"type": "float",
+"value": 0.0009
+}

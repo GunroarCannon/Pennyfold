@@ -1,0 +1,14 @@
+{
+  "name": "folded-fists-relayer",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Settles the Folded Fists town economy on NEAR testnet. No dependencies.",
+  "license": "MIT",
+  "engines": { "node": ">=18" },
+  "scripts": {
+    "start": "node relayer.mjs",
+    "live": "node relayer.mjs --live",
+    "selftest": "node selftest.mjs"
+  }
+}

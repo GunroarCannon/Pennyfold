@@ -1,0 +1,12 @@
+.godot/
+export/
+*.exe
+*.pck
+*.zip
+*.apk
+.DS_Store
+Thumbs.db
+server/.env
+server/state.json
+node_modules/
+build/
