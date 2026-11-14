@@ -68,7 +68,7 @@ window.pennyfold = (function () {
     }
   } catch (e) { /* storage blocked: guest only */ }
   // Shared-world server (Koyeb). Paste its wss:// address here after deploying, or open the page with ?world=wss://...
-  const WORLD_URL = '';
+  const WORLD_URL = 'wss://pennyfold.onrender.com';
   let world = WORLD_URL;
   try { world = new URLSearchParams(location.search).get('world') || WORLD_URL; } catch (e) {}
   return {
