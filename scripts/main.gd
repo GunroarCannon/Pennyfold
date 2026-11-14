@@ -159,6 +159,7 @@ var cam_fov := 50.0
 var cam_shake := 1.0
 var talk_k := 0.0
 var player_idle := 0.0
+var _player_prev_pos := Vector2.ZERO
 var view_dir := {}
 var fov_kick := 0.0
 var target_ring_node: Node3D
@@ -2541,10 +2542,18 @@ func _player_attack() -> void:
 	var p: Vector2 = player["pos"]
 	var hd: Vector2 = player["heading"]
 	var tgt := _aim_at(p, hd, 190.0)
+	var lunge_ok := true
 	if tgt != null:
-		hd = (tgt.pos - p).normalized()
-		player["heading"] = hd
-	player["knock"] = hd * [170.0, 170.0, 360.0][step]
+		var toward := (tgt.pos - p).normalized()
+		var md: Vector2 = player["move_dir"]
+		# Backing away while swinging: keep facing where you are walking and do
+		# not get yanked toward the target, or you moonwalk.
+		if md != Vector2.ZERO and md.dot(toward) < 0.1:
+			lunge_ok = false
+		else:
+			hd = toward
+			player["heading"] = hd
+	player["knock"] = hd * [170.0, 170.0, 360.0][step] if lunge_ok else Vector2.ZERO
 	player["hit_t"] = [0.07, 0.07, 0.14][step]
 	player["hit_step"] = step
 	player_view.lunge()
@@ -3361,6 +3370,21 @@ func _event_started(e: Dictionary) -> void:
 					n.state = "flee"
 					n.scare = 5.0
 					n.say("Raiders!")
+		"wolf_moon":
+			# a big night pack closes in on the walls
+			for i in 6:
+				var a2 := rng.randf() * TAU
+				_add_monster("wolf" if i < 5 else "bat", _free_spot_near(c + Vector2(cos(a2), sin(a2)) * rng.randf_range(480.0, 700.0)), 2)
+			for n in npcs:
+				if n.city == e["city"] and n.job_kind != "guard" and not (n is Merchant) and not n.is_hero():
+					n.state = "flee"
+					n.scare = 6.0
+					n.say("The pack!")
+		"bog_surge":
+			for i in 3:
+				var a3 := rng.randf() * TAU
+				_add_monster("slime", _free_spot_near(c + Vector2(cos(a3), sin(a3)) * rng.randf_range(520.0, 760.0)), 1)
+			_add_monster("troll", _free_spot_near(c + Vector2.from_angle(rng.randf() * TAU) * 800.0), 1)
 		"blight", "collapse":
 			for n in npcs:
 				if n.city == e["city"] and not (n is Merchant):
@@ -3707,7 +3731,17 @@ func _sync_views(delta: float) -> void:
 		player_idle = 0.0
 	else:
 		player_idle += delta
-	_pick_view(player_view, hd, float(player["moving"]) > 0.0, false)
+	# If a shove or lunge carries you against the way you are walking, face the
+	# way you actually travel instead of running backwards on the spot.
+	var travelled: Vector2 = pp - _player_prev_pos
+	_player_prev_pos = pp
+	var view_dir := hd
+	var view_moving := float(player["moving"]) > 0.0
+	if view_moving and delta > 0.0 and travelled.length() > 60.0 * delta and travelled.normalized().dot(hd) < -0.3:
+		view_dir = travelled.normalized()
+		if absf(view_dir.dot(right)) > 0.2:
+			player_view.facing = signf(view_dir.dot(right))
+	_pick_view(player_view, view_dir, view_moving, false)
 	player_view.animate(delta, float(player["moving"]) * (1.35 if player["sprint"] else 1.0))
 	player_view.set_hp(float(player["hp"]) / float(player["max_hp"]))
 	if float(player["moving"]) > 0.0:

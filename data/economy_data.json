@@ -753,6 +753,34 @@
    "danger": 3,
    "text": "Raiders (wolves, mostly) are prowling the roads near %s. Merchants are nervous.",
    "npc": "Wolves on the road! Wolves! Not the good kind."
+  },
+  {
+   "id": "wolf_moon",
+   "name": "Wolf Moon",
+   "where": "any",
+   "days": 1,
+   "weight": 0.45,
+   "goods": {
+    "blade": 1.3,
+    "hide": 0.8
+   },
+   "danger": 4,
+   "text": "A wolf moon rises over %s. The pack has come down to the walls.",
+   "npc": "That moon is far too round. Lock the bread up."
+  },
+  {
+   "id": "bog_surge",
+   "name": "Bog Surge",
+   "where": "any",
+   "days": 2,
+   "weight": 0.4,
+   "goods": {
+    "herb": 1.4,
+    "gel": 0.7
+   },
+   "danger": 2,
+   "text": "The bog has overflowed near %s, and something large is wading out of it.",
+   "npc": "The bog is walking. I did not know bogs could do that."
   }
  ],
  "reasons": {

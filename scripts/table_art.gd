@@ -51,6 +51,9 @@ func restart() -> void:
 func _process(delta: float) -> void:
 	if not is_visible_in_tree():
 		return
+	# the cardboard waits for the loading card to finish peeling away
+	if Boot.active:
+		return
 	_t += delta
 	queue_redraw()
 	if _overlay != null:

@@ -69,13 +69,14 @@ static func is_sprite(k: String) -> bool:
 ## per tier: hp, speed, damage, aggro radius, size
 const TIERS := [
 	{"hp": 1.0, "speed": 1.0, "dmg": 1.0, "aggro": 1.0, "size": 1.0, "prefix": "", "cd": 1.0},
-	{"hp": 1.7, "speed": 1.3, "dmg": 1.35, "aggro": 1.35, "size": 1.12, "prefix": "Fierce ", "cd": 0.85},
-	{"hp": 2.8, "speed": 1.75, "dmg": 1.9, "aggro": 1.8, "size": 1.3, "prefix": "Dire ", "cd": 0.65},
+	{"hp": 1.7, "speed": 1.3, "dmg": 1.35, "aggro": 1.35, "size": 1.18, "prefix": "Fierce ", "cd": 0.85},
+	{"hp": 2.8, "speed": 1.75, "dmg": 1.9, "aggro": 1.8, "size": 1.45, "prefix": "Dire ", "cd": 0.65},
 ]
 const TIER_TINT := [Color(1, 1, 1), Color(1.0, 0.78, 0.55), Color(1.0, 0.38, 0.32)]
 
 var kind := "wolf"
 var tier := 0
+var variant_size := 1.0      # individual build: brutes are bigger and tougher, swifts smaller and quicker
 var display_name := "Wolf"
 var pos := Vector2.ZERO
 var home := Vector2.ZERO
@@ -148,10 +149,27 @@ func setup(k: String, cute: bool, p_tier := 0) -> void:
 	knock_power = float(t["knock"]) / (1.0 + tier * 0.5)
 	if t.has("pounce") and tier >= int(t.get("pounce_tier", 1)):
 		pounce_range = float(t["pounce"])
+	if not is_big(k):
+		var roll := randf()
+		if roll < 0.22:
+			variant_size = randf_range(1.22, 1.38)
+			display_name = "Brute " + display_name
+			hp *= 1.6
+			dmg *= 1.3
+			speed *= 0.92
+			knock_power *= 0.7
+		elif roll < 0.42:
+			variant_size = randf_range(0.82, 0.92)
+			display_name = "Swift " + display_name
+			hp *= 0.85
+			speed *= 1.3
+		else:
+			variant_size = randf_range(0.94, 1.08)
+		max_hp = hp
 
 
 func size_mult() -> float:
-	return 1.0 if is_big(kind) else float(TIERS[tier]["size"])
+	return 1.0 if is_big(kind) else float(TIERS[tier]["size"]) * variant_size
 
 
 func update(delta: float, world) -> void:

@@ -648,14 +648,18 @@ func _build_title() -> void:
 	var play := _button("PLAY", GOLD)
 	play.add_theme_font_size_override("font_size", 52)
 	play.custom_minimum_size = Vector2(380, 92)
-	var pn := play.get_theme_stylebox("normal")
-	if pn is CardBox:
-		pn.shadow = Vector2(7, 10)
-		pn.line = 3.5
-		pn.cut = 9.0
-		pn.tape = 3
-		pn.torn = CardBox.BOTTOM
-		pn.rip = 8.0
+	# normal, hover and pressed are separate styles: give all three the same
+	# tape and torn edge so the button never flickers between looks
+	for state in ["normal", "hover", "pressed"]:
+		var pn := play.get_theme_stylebox(state)
+		if pn is CardBox:
+			pn.line = 3.5
+			pn.cut = 9.0
+			pn.tape = 3
+			pn.seed = 11
+			pn.torn = CardBox.BOTTOM
+			pn.rip = 8.0
+			pn.shadow = Vector2(7, 10) if state != "pressed" else Vector2.ZERO
 	play.pressed.connect(_on_play)
 	vb.add_child(play)
 	# the button breathes, so it reads as the thing to press
@@ -2015,14 +2019,17 @@ class RoundMap:
 	var _rot := 0.0
 	var _c := Vector2.ZERO
 	var _ctr := Vector2.ZERO
-	var _tag := StyleBoxFlat.new()
+	var _tag: CardBox
 
 	func _init() -> void:
-		_tag.bg_color = Hud.NOTE
-		_tag.set_corner_radius_all(11)
-		_tag.set_border_width_all(2)
-		_tag.border_color = Hud.INK
-		_tag.anti_aliasing = true
+		# a squarish scrap of board with tape across its corner
+		_tag = CardBox.new(Hud.PAPER_LIGHT, 93, 0.0)
+		_tag.cut = 3.0
+		_tag.rip = 4.0
+		_tag.line = 2.0
+		_tag.torn = 0
+		_tag.tape = 1
+		_tag.shadow = Vector2(2, 3)
 
 	func _pt(px: Vector2) -> Vector2:
 		var v := (px / World.TILE - Vector2(World.T0) - _c) / SPAN
@@ -2117,9 +2124,9 @@ class RoundMap:
 		# place name
 		var name := here if here != "" else ("Sunny Town" if main.player_in_town() else "The Wilds")
 		var tw := font.get_string_size(name, HORIZONTAL_ALIGNMENT_CENTER, -1, 16).x + 22.0
-		var tr := Rect2(_ctr.x - tw * 0.5, _ctr.y + RAD + 12.0, tw, 24.0)
+		var tr := Rect2(_ctr.x - tw * 0.5, _ctr.y + RAD + 14.0, tw, 32.0)
 		draw_style_box(_tag, tr)
-		draw_string(font, Vector2(tr.position.x, tr.position.y + 17.0), name, HORIZONTAL_ALIGNMENT_CENTER, tw, 16, Hud.INK)
+		draw_string(font, Vector2(tr.position.x, tr.position.y + 22.0), name, HORIZONTAL_ALIGNMENT_CENTER, tw, 16, Hud.INK)
 
 
 ## A little pill showing the NEAR link: a coloured dot (live / dry run /
@@ -2134,12 +2141,12 @@ class NearChip:
 	func _init() -> void:
 		mouse_filter = Control.MOUSE_FILTER_STOP
 		mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-		_card = CardBox.new(Color(0.20, 0.13, 0.08), 77, 0.0)
-		_card.torn = CardBox.LEFT
-		_card.rip = 5.0
-		_card.cut = 4.0
-		_card.line = 1.8
-		_card.tape = 0
+		_card = CardBox.new(Hud.PAPER_LIGHT, 77, 0.0)
+		_card.torn = 0
+		_card.rip = 4.0
+		_card.cut = 3.0
+		_card.line = 2.0
+		_card.tape = 1
 		_card.shadow = Vector2(1, 2)
 		tooltip_text = "NEAR settlement status - click for the ledger"
 
@@ -2147,8 +2154,8 @@ class NearChip:
 		_text = Chain.chip_text()
 		var font: Font = Hud.head_font_static
 		var w := font.get_string_size(_text, HORIZONTAL_ALIGNMENT_LEFT, -1, 15).x + 52.0
-		custom_minimum_size = Vector2(w, 28)
-		size = Vector2(w, 28)
+		custom_minimum_size = Vector2(w, 34)
+		size = Vector2(w, 34)
 		queue_redraw()
 
 	func _gui_input(ev: InputEvent) -> void:
@@ -2168,7 +2175,7 @@ class NearChip:
 			if e["status"] == "sending":
 				busy = true
 		var r := 7.0 + (1.5 * sin(Time.get_ticks_msec() * 0.012) if busy else 0.0)
-		var c := Vector2(20, 14)
+		var c := Vector2(22, 18)
 		# a marker blot with a loose pen ring, like a stamp pad dab
 		for k in 7:
 			var f := float(k) / 6.0
@@ -2177,8 +2184,8 @@ class NearChip:
 		for k in 16:
 			var a := TAU * float(k) / 15.0 * 0.97
 			ring.append(c + Vector2(cos(a), sin(a)) * (r + 1.5 + sin(k * 2.3) * 0.5))
-		draw_polyline(ring, Color(0.98, 0.93, 0.80, 0.7), 1.4, true)
-		draw_string(Hud.head_font_static, Vector2(34, 19), _text, HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color(0.98, 0.93, 0.80))
+		draw_polyline(ring, Color(0.20, 0.13, 0.08, 0.85), 1.6, true)
+		draw_string(Hud.head_font_static, Vector2(38, 23), _text, HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Hud.INK)
 
 
 ## The title lettering: stamped paper letters that each sit a little crooked,

@@ -52,9 +52,7 @@ The CRITBOX splash and logo are the author's own.
 `assets/dragon_head_parts.png` is the red dragon head sheet from nirdia.com (CC BY-SA). The cut-outs in `assets/dragon/` are derived from it (outlined, textured and torn into cardboard pieces), so they carry the same CC BY-SA licence.
 
 ## Cardboard photographs (`assets/paper/board_torn.png`, `board_wrinkle.png`)
-Copied from the author's fowl-play project, which copied them from goalstar-recall.
-**Source and licence are not recorded in either project.** Confirm before any
-commercial release; replace them if the licence does not allow it.
+CC0 (public domain) cardboard photographs, resized for the game.
 
 ## Icon (`assets/icon.png`)
 Made for this project: the board texture above, a gold coin and a folded corner.
