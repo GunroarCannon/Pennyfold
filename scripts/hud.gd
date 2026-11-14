@@ -86,6 +86,7 @@ var curtain_l: ColorRect
 var curtain_r: ColorRect
 var rip_fx: RipFx
 var touch: TouchControls
+var pause_btn: Button
 var dragon_fx: DragonFx
 var _rip_ready := 0
 var log_lines: Array = []
@@ -391,7 +392,7 @@ func _build_status() -> void:
 	var vb := VBoxContainer.new()
 	vb.add_theme_constant_override("separation", 6)
 	row.add_child(vb)
-	hp_g = Gauge.new(Color(0.88, 0.30, 0.30), "heart", 262.0, 26.0)
+	hp_g = Gauge.new(Color(0.36, 0.72, 0.34), "heart", 262.0, 26.0)
 	vb.add_child(hp_g)
 	st_g = Gauge.new(Color(0.95, 0.58, 0.18), "bolt", 262.0, 22.0)
 	vb.add_child(st_g)
@@ -461,6 +462,10 @@ func _build_top() -> void:
 	chain_chip = NearChip.new()
 	chain_chip.hud = self
 	root.add_child(chain_chip)
+	pause_btn = _button("Menu", PAPER_LIGHT)
+	pause_btn.add_theme_font_size_override("font_size", 18)
+	pause_btn.pressed.connect(func() -> void: toggle_pause())
+	root.add_child(pause_btn)
 
 
 func _build_log() -> void:
@@ -640,21 +645,37 @@ func _build_title() -> void:
 	vb.add_theme_constant_override("separation", 10)
 	vb.custom_minimum_size = Vector2(360, 0)
 	box.add_child(vb)
-	var play := _button("Play", GOLD)
-	play.add_theme_font_size_override("font_size", 34)
+	var play := _button("PLAY", GOLD)
+	play.add_theme_font_size_override("font_size", 52)
+	play.custom_minimum_size = Vector2(380, 92)
+	var pn := play.get_theme_stylebox("normal")
+	if pn is CardBox:
+		pn.shadow = Vector2(7, 10)
+		pn.line = 3.5
+		pn.cut = 9.0
+		pn.tape = 3
+		pn.torn = CardBox.BOTTOM
+		pn.rip = 8.0
 	play.pressed.connect(_on_play)
 	vb.add_child(play)
+	# the button breathes, so it reads as the thing to press
+	play.resized.connect(func() -> void: play.pivot_offset = play.size * 0.5)
+	var bounce := play.create_tween().set_loops()
+	bounce.tween_property(play, "scale", Vector2(1.04, 1.04), 0.8).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	bounce.tween_property(play, "scale", Vector2(1.0, 1.0), 0.8).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
 	_build_wallet_row(vb)
-	var how := _label("Stick move   Sword strike   Bubble use   Drag turn   Pinch zoom" if Game.touch else "WASD move   Click strike   X dodge   E use   Tab ledger", 17, NOTE)
-	how.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	how.add_theme_color_override("font_outline_color", INK)
-	how.add_theme_constant_override("outline_size", 7)
-	col.add_child(how)
-	var near := _label("Every coin is real: shops, townsfolk and you settle on NEAR testnet.", 16, NOTE)
+	var quips := ["Today's forecast: sunny, with a chance of wolves.", "The baker is solvent. You are not. Yet.", "Wolves take bread. Rarely politely.", "Every coin has a past. Some of them are sketchy.", "Nobody here is printing money. Nobody. Stop looking.", "Be nice to the treasury. It pays the guards."]
+	var near := _label(quips[randi() % quips.size()], 24, Color(1.0, 0.96, 0.84))
+	near.add_theme_font_override("font", head_font)
+	near.add_theme_color_override("font_outline_color", Color(0.17, 0.09, 0.05))
+	near.add_theme_constant_override("outline_size", 9)
 	near.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	near.add_theme_color_override("font_outline_color", INK)
-	near.add_theme_constant_override("outline_size", 6)
+	near.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	near.resized.connect(func() -> void:
+		near.pivot_offset = near.size * 0.5
+		near.rotation = -0.025)
 	col.add_child(near)
+	col.move_child(near, col.get_child_count() - 1)
 	var pad := Control.new()
 	pad.custom_minimum_size = Vector2(0, 26)
 	pad.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -727,7 +748,7 @@ func _refresh_wallet() -> void:
 		link.add_theme_font_size_override("font_size", 18)
 		link.pressed.connect(_on_link_pressed)
 		_wallet_row.add_child(link)
-	_wallet_note.text = Chain.link_note if Chain.link_note != "" else ("Optional: link a NEAR testnet wallet to be paid, or just play as a guest." if Game.account == "" else "")
+	_wallet_note.text = Chain.link_note if Chain.link_note != "" else ("Got a NEAR testnet wallet? Link it to get paid. No? Play as a guest." if Game.account == "" else "")
 
 
 func _on_link_pressed() -> void:
@@ -748,6 +769,9 @@ var table: TableArt
 func show_title() -> void:
 	table.visible = true
 	title_panel.visible = true
+	if Game.resume_creator:
+		Game.resume_creator = false
+		_on_play.call_deferred()
 
 
 func _on_play() -> void:
@@ -1517,6 +1541,9 @@ func refresh(world, delta: float) -> void:
 	if not started:
 		return
 	hp_g.set_value(world.player["hp"], world.player["max_hp"])
+	var hpf := clampf(float(world.player["hp"]) / maxf(float(world.player["max_hp"]), 1.0), 0.0, 1.0)
+	# green while healthy, turning orange then red as it runs low
+	hp_g.col = Color(0.86, 0.26, 0.24).lerp(Color(0.36, 0.72, 0.34), smoothstep(0.15, 0.6, hpf))
 	st_g.set_value(world.player["stamina"], world.player["max_stamina"])
 	st_g.tired = world.player["tired"]
 	ink_g.set_value(world.player["ink"], world.player["max_ink"])
@@ -1568,6 +1595,8 @@ func refresh(world, delta: float) -> void:
 	clock_tag.reset_size()
 	clock_tag.position = Vector2(vs.x * 0.5 - clock_tag.size.x * 0.5, 54)
 	minimap.position = Vector2(vs.x - minimap.size.x - 14, 10)
+	pause_btn.visible = started and not title_panel.visible
+	pause_btn.position = Vector2(minimap.position.x - pause_btn.size.x - 8, 14)
 	minimap.queue_redraw()
 	chain_chip.refresh()
 	menus.update(world, vs)
@@ -2105,7 +2134,7 @@ class NearChip:
 	func _init() -> void:
 		mouse_filter = Control.MOUSE_FILTER_STOP
 		mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-		_card = CardBox.new(Hud.NOTE, 77, 0.0)
+		_card = CardBox.new(Color(0.20, 0.13, 0.08), 77, 0.0)
 		_card.torn = CardBox.LEFT
 		_card.rip = 5.0
 		_card.cut = 4.0
@@ -2148,8 +2177,8 @@ class NearChip:
 		for k in 16:
 			var a := TAU * float(k) / 15.0 * 0.97
 			ring.append(c + Vector2(cos(a), sin(a)) * (r + 1.5 + sin(k * 2.3) * 0.5))
-		draw_polyline(ring, Color(0.20, 0.13, 0.08, 0.85), 1.6, true)
-		draw_string(Hud.head_font_static, Vector2(34, 19), _text, HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Hud.INK)
+		draw_polyline(ring, Color(0.98, 0.93, 0.80, 0.7), 1.4, true)
+		draw_string(Hud.head_font_static, Vector2(34, 19), _text, HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color(0.98, 0.93, 0.80))
 
 
 ## The title lettering: stamped paper letters that each sit a little crooked,
@@ -2209,27 +2238,45 @@ class TitleArt:
 			_stamp(font, words[0], Vector2(vs.x * 0.5, cy - s1 * 0.42), s1, 0.0, Hud.GOLD)
 		if words.size() > 1:
 			_stamp(font, words[1], Vector2(vs.x * 0.5, cy + s1 * 0.62), int(s1 * 0.92), 2.0, Color(0.99, 0.97, 0.90))
-		# ribbon with the tagline
+		# ribbon with the tagline: a flat band, two tails folded back behind it
 		var rf: Font = hud.head_font
-		var rs := 24
-		var tw := rf.get_string_size(Game.TAGLINE, HORIZONTAL_ALIGNMENT_LEFT, -1, rs).x + 70.0
-		var ry := c.y + h * 0.5 + 12.0
-		var rb := Rect2(vs.x * 0.5 - tw * 0.5, ry, tw, 40.0)
-		var tail_l := PackedVector2Array([rb.position + Vector2(0, 6), rb.position + Vector2(-26, 6), rb.position + Vector2(-12, 26), rb.position + Vector2(-26, 46), rb.position + Vector2(0, 40)])
-		var tail_r := PackedVector2Array([rb.end + Vector2(0, -34), rb.end + Vector2(26, -34), rb.end + Vector2(12, -14), rb.end + Vector2(26, 6), rb.end + Vector2(0, 0)])
-		for poly in [tail_l, tail_r]:
-			draw_colored_polygon(poly, Color(0.80, 0.34, 0.30))
-			var pr: PackedVector2Array = poly.duplicate()
-			pr.append(poly[0])
-			draw_polyline(pr, Hud.INK, 3.0, true)
-		var ribbon_box := CardBox.new(Color(0.93, 0.45, 0.40), 77, 0.0)
-		ribbon_box.cut = 5.0
-		ribbon_box.rip = 6.0
-		ribbon_box.torn = CardBox.LEFT | CardBox.RIGHT
-		ribbon_box.tape = 0
-		ribbon_box.shadow = Vector2(4, 6)
-		draw_style_box(ribbon_box, rb)
-		draw_string(rf, Vector2(rb.position.x, rb.position.y + 29), Game.TAGLINE, HORIZONTAL_ALIGNMENT_CENTER, rb.size.x, rs, Color(1, 0.97, 0.9))
+		var rs := 26
+		var tw := rf.get_string_size(Game.TAGLINE, HORIZONTAL_ALIGNMENT_LEFT, -1, rs).x + 64.0
+		var ry := c.y + h * 0.5 + 14.0
+		var bh := 42.0
+		var rb := Rect2(vs.x * 0.5 - tw * 0.5, ry, tw, bh)
+		var dark := Color(0.70, 0.27, 0.24)
+		var mid := Color(0.93, 0.45, 0.40)
+		for side in [-1.0, 1.0]:
+			var edge: float = rb.position.x if side < 0.0 else rb.end.x
+			# the tail sits lower and behind the band, with a swallow-tail notch
+			var x0: float = edge + side * 4.0
+			var x1: float = edge + side * 44.0
+			var xn: float = edge + side * 28.0
+			var tail := PackedVector2Array([Vector2(x0, ry + 12.0), Vector2(x1, ry + 12.0), Vector2(xn, ry + 12.0 + bh * 0.5), Vector2(x1, ry + 12.0 + bh), Vector2(x0, ry + 12.0 + bh)])
+			var sh := PackedVector2Array()
+			for q in tail:
+				sh.append(q + Vector2(3, 5))
+			draw_colored_polygon(sh, Color(0.1, 0.06, 0.03, 0.3))
+			draw_colored_polygon(tail, dark)
+			var pr: PackedVector2Array = tail.duplicate()
+			pr.append(tail[0])
+			draw_polyline(pr, Hud.INK, 2.5, true)
+			# the fold: a small dark triangle where the tail tucks under the band
+			var fold := PackedVector2Array([Vector2(edge, ry + bh), Vector2(x0, ry + 12.0 + bh), Vector2(x0, ry + bh)])
+			draw_colored_polygon(fold, dark.darkened(0.35))
+		var band := PackedVector2Array([rb.position, Vector2(rb.end.x, rb.position.y), rb.end, Vector2(rb.position.x, rb.end.y)])
+		var bs := PackedVector2Array()
+		for q in band:
+			bs.append(q + Vector2(3, 5))
+		draw_colored_polygon(bs, Color(0.1, 0.06, 0.03, 0.3))
+		draw_colored_polygon(band, mid)
+		draw_rect(Rect2(rb.position, Vector2(rb.size.x, 5.0)), Color(1, 1, 1, 0.16))
+		draw_rect(Rect2(rb.position + Vector2(0, bh - 5.0), Vector2(rb.size.x, 5.0)), Color(0, 0, 0, 0.12))
+		band.append(band[0])
+		draw_polyline(band, Hud.INK, 2.5, true)
+		draw_string(rf, Vector2(rb.position.x + 2.0, rb.position.y + 31.0), Game.TAGLINE, HORIZONTAL_ALIGNMENT_CENTER, rb.size.x, rs, Color(0.2, 0.1, 0.06, 0.5))
+		draw_string(rf, Vector2(rb.position.x, rb.position.y + 29.0), Game.TAGLINE, HORIZONTAL_ALIGNMENT_CENTER, rb.size.x, rs, Color(1, 0.97, 0.9))
 
 
 ## A strip at the top: bearings relative to the camera, places, quest pin.

@@ -3,7 +3,7 @@ extends Node
 
 ## The game's name, in one place.
 const TITLE := "Pennyfold"
-const TAGLINE := "A world of cut paper. A ledger of real coins."
+const TAGLINE := "Don't fold under pressure."
 const SETTINGS := "user://settings.cfg"
 
 ## "cute" (chibi people, round monsters) or "real" (realistic proportions).
@@ -17,6 +17,9 @@ var force_tutorial := false
 
 ## The hero made on the character screen: name, look and stat points.
 ## `made` is false until the player has been through the creator once.
+## A creator draft kept across the scene reload that an art-style switch needs.
+var hero_draft: Dictionary = {}
+var resume_creator := false
 var hero := {"made": false, "name": "You", "skin": 0, "hair": 0, "cloth": 0, "hat": 0,
 	"stats": {"might": 2, "vigor": 2, "spirit": 2, "swift": 2, "luck": 2}}
 

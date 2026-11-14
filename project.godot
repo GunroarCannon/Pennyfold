@@ -11,6 +11,7 @@ config_version=5
 [application]
 
 config/name="Pennyfold"
+config/icon="res://assets/icon.png"
 config/description="A cardboard town where NPCs eat, work, trade and fight, and every coin moves."
 run/main_scene="res://scenes/splash.tscn"
 boot_splash/bg_color=Color(0.62, 0.44, 0.27, 1)

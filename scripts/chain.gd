@@ -139,19 +139,22 @@ func chip_text() -> String:
 
 
 func _chip_core() -> String:
+	var q := pending.size()
 	match mode:
 		"offline":
-			return "Offline ledger"
+			return "NEAR off  -  saved on this device"
 		"dry-run":
-			return "NEAR dry run - %d queued" % pending.size()
+			return "NEAR dry run  -  %d queued" % q
 	var last := -1
 	for e in day_log:
 		if e["status"] == "settled":
 			last = int(e["day"])
 	for e in day_log:
 		if e["status"] == "sending":
-			return "NEAR %s - settling..." % network
-	return "NEAR %s - %s" % [network, "day %d settled" % last if last >= 0 else "linked"]
+			return "NEAR live  -  settling..."
+	if last >= 0:
+		return "NEAR live  -  day %d settled%s" % [last, ("  +%d new" % q) if q > 0 else ""]
+	return "NEAR live  -  %d waiting" % q if q > 0 else "NEAR live  -  connected"
 
 
 func explorer_base() -> String:
@@ -301,7 +304,7 @@ func _fail(job: Array, why: String) -> void:
 	print("[Chain] %s failed: %s (%s)" % [job[3], why, url])
 	if job[3] == "link":
 		linked_ok = false
-		link_note = "No relayer to check the account yet. Playing as a guest."
+		link_note = "Wallet saved. It gets checked once the relayer is online."
 	if job[3] == "status":
 		mode = "offline"
 	elif job[3] == "settle":

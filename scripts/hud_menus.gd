@@ -22,6 +22,7 @@ var hud: Hud
 var creator: PanelContainer
 var skills_panel: PanelContainer
 var pause_panel: PanelContainer
+var day_panel: PanelContainer
 var hotbar: HBoxContainer
 var _hot_sig := ""
 var _slots: Array = []
@@ -41,7 +42,7 @@ func _init(h: Hud) -> void:
 
 
 func any_open() -> bool:
-	return (creator != null and creator.visible) or (skills_panel != null and skills_panel.visible) or (pause_panel != null and pause_panel.visible)
+	return (creator != null and creator.visible) or (skills_panel != null and skills_panel.visible) or (pause_panel != null and pause_panel.visible) or (day_panel != null and day_panel.visible)
 
 
 # ---------------- hotbar ----------------
@@ -129,7 +130,7 @@ func toggle_skills() -> void:
 	_show_skills()
 
 
-const SK_CELL := Vector2(96, 112)
+const SK_CELL := Vector2(96, 116)
 const SK_NODE := 70.0
 
 var _sk_sel := ""
@@ -283,16 +284,15 @@ func _sk_node(world, s: Dictionary, c: Vector2) -> void:
 		_refresh_skills())
 	_sk_graph.add_child(btn)
 	var ic := hud._icon(String(s["icon"]), 40)
-	ic.position = Vector2(15, 8)
+	ic.position = Vector2(15, 14)
 	ic.modulate = bcol.darkened(0.45) if (known or why == "") else Hud.INK.lightened(0.55)
 	ic.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	btn.add_child(ic)
 	var label := String(s["name"]) if s["kind"] == "active" else "%s %d/%d" % [s["name"], sk.rank(id), sk.max_rank(id)]
 	var nm := hud._label(label, 12)
-	nm.position = Vector2(2, SK_NODE - 20)
-	nm.size = Vector2(SK_NODE - 4, 18)
+	nm.position = Vector2((SK_NODE - SK_CELL.x) * 0.5, SK_NODE + 1)
+	nm.size = Vector2(SK_CELL.x, 18)
 	nm.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	nm.clip_text = true
 	nm.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	btn.add_child(nm)
 	if why == "" and not known:
@@ -360,9 +360,10 @@ func _fit(p: Control) -> void:
 func show_creator(on_done: Callable) -> void:
 	if creator != null:
 		creator.queue_free()
-	_draft = {"name": "", "skin": 0, "hair": 0, "cloth": 0, "hat": 0, "stats": {"might": 1, "vigor": 1, "spirit": 1, "swift": 1, "luck": 1}}
-	_rolls = 3
-	_bonus = 0
+	if true:
+		_draft = {"name": "", "skin": 0, "hair": 0, "cloth": 0, "hat": 0, "stats": {"might": 1, "vigor": 1, "spirit": 1, "swift": 1, "luck": 1}}
+	_rolls = int(_draft.get("_r", 3))
+	_bonus = int(_draft.get("_b", 0))
 	creator = hud._panel(Hud.PAPER_LIGHT)
 	creator.visible = false
 	creator.z_index = 50
@@ -377,15 +378,52 @@ func show_creator(on_done: Callable) -> void:
 	var pv := VBoxContainer.new()
 	pv.custom_minimum_size = Vector2(210, 0)
 	split.add_child(pv)
-	_preview = TextureRect.new()
-	_preview.custom_minimum_size = Vector2(210, 262)
-	_preview.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	_preview.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	pv.add_child(_preview)
+	var vpc := SubViewportContainer.new()
+	vpc.custom_minimum_size = Vector2(210, 262)
+	vpc.stretch = true
+	pv.add_child(vpc)
+	_pv_vp = SubViewport.new()
+	_pv_vp.size = Vector2i(210, 262)
+	_pv_vp.transparent_bg = true
+	_pv_vp.own_world_3d = true
+	_pv_vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	vpc.add_child(_pv_vp)
+	_pv_root = Node3D.new()
+	_pv_vp.add_child(_pv_root)
+	var env := Environment.new()
+	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+	env.ambient_light_color = Color(1, 1, 1)
+	env.ambient_light_energy = 1.0
+	env.background_mode = Environment.BG_CLEAR_COLOR
+	var we := WorldEnvironment.new()
+	we.environment = env
+	_pv_vp.add_child(we)
+	var sun := DirectionalLight3D.new()
+	sun.rotation_degrees = Vector3(-30, 20, 0)
+	sun.light_energy = 0.6
+	_pv_vp.add_child(sun)
+	var cam := Camera3D.new()
+	cam.fov = 28.0
+	_pv_vp.add_child(cam)
+	cam.position = Vector3(0, 1.0, 5.2)
+	cam.current = true
+	_pv_figure = null
 	pv.add_child(hud._label("That is you.", 16, Hud.INK.lightened(0.3)))
 	split.add_child(vb)
 	vb.add_child(hud._label("Who are you?", 36))
 	vb.add_child(hud._label("Pick a name and a look, then spend your points. Fate may add a few more.", 16, Hud.INK.lightened(0.25)))
+	_pv_cute = Game.cute()
+	var style := hud._button("", Hud.PAPER_LIGHT)
+	style.add_theme_font_size_override("font_size", 16)
+	var set_label := func() -> void:
+		style.text = "Art style: %s  (tap to switch; applies when you begin)" % ("Cute" if _pv_cute else "Classic")
+	set_label.call()
+	style.pressed.connect(func() -> void:
+		_pv_cute = not _pv_cute
+		set_label.call()
+		Sfx.play("click")
+		_update_preview())
+	vb.add_child(style)
 	_name_edit = LineEdit.new()
 	_name_edit.placeholder_text = "Your name"
 	_name_edit.max_length = 14
@@ -397,6 +435,7 @@ func show_creator(on_done: Callable) -> void:
 	_name_edit.add_theme_stylebox_override("normal", fs)
 	_name_edit.add_theme_stylebox_override("focus", fs)
 	vb.add_child(_name_edit)
+	_name_edit.text = String(_draft.get("name", ""))
 	vb.add_child(_swatch_row("Skin", "skin", HERO_SKINS.size(), func(i: int) -> Color: return HERO_SKINS[i]))
 	vb.add_child(_swatch_row("Hair", "hair", HERO_HAIRS.size(), func(i: int) -> Color: return HERO_HAIRS[i]))
 	vb.add_child(_swatch_row("Outfit", "cloth", HERO_CLOTHS.size(), func(i: int) -> Color: return HERO_CLOTHS[i]))
@@ -417,7 +456,7 @@ func show_creator(on_done: Callable) -> void:
 	_left_label = hud._label("", 22)
 	_left_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	sh.add_child(_left_label)
-	var dice := hud._button("Roll the dice (3)", Hud.GOLD)
+	var dice := hud._button("Roll the dice (%d)" % _rolls, Hud.GOLD)
 	dice.add_theme_font_size_override("font_size", 18)
 	sh.add_child(dice)
 	_dice_note = hud._label("", 15, Hud.INK.lightened(0.2))
@@ -426,18 +465,17 @@ func show_creator(on_done: Callable) -> void:
 		if _rolls <= 0:
 			return
 		_rolls -= 1
-		var spent := _spent()
-		_bonus = randi_range(0, 5)
-		_dice_note.text = "Fate gave you %d extra point%s." % [_bonus, "" if _bonus == 1 else "s"]
-		# a reroll that would leave you overspent takes points back
-		var over := spent - (BASE_POINTS + _bonus)
-		var order := STAT_ORDER.duplicate()
-		order.reverse()
-		while over > 0:
-			for k in order:
-				if over > 0 and int(_draft["stats"][k]) > 1:
-					_draft["stats"][k] = int(_draft["stats"][k]) - 1
-					over -= 1
+		# same number of points every time; fate only decides where they go
+		_bonus = 0
+		for k in STAT_ORDER:
+			_draft["stats"][k] = 1
+		var pool := BASE_POINTS
+		while pool > 0:
+			var k2: String = STAT_ORDER[randi() % STAT_ORDER.size()]
+			if int(_draft["stats"][k2]) < 7:
+				_draft["stats"][k2] = int(_draft["stats"][k2]) + 1
+				pool -= 1
+		_dice_note.text = "Fate dealt your %d points across your stats." % BASE_POINTS
 		dice.text = "Roll the dice (%d)" % _rolls
 		Sfx.play("coin")
 		_refresh_stats())
@@ -456,6 +494,14 @@ func show_creator(on_done: Callable) -> void:
 		_draft["made"] = true
 		Game.hero = _draft.duplicate(true)
 		hud._vis(creator, false)
+		var want := "cute" if _pv_cute else "real"
+		if want != Game.style:
+			# the world is built once per style, so a different look is one reload
+			Game.style = want
+			Game.started = true
+			Game.via_title = true
+			hud.get_tree().reload_current_scene()
+			return
 		on_done.call())
 	vb.add_child(go)
 	_refresh_stats()
@@ -465,12 +511,18 @@ func show_creator(on_done: Callable) -> void:
 	Sfx.play("open")
 
 
-var _preview: TextureRect
+var _pv_cute := true
+var _pv_vp: SubViewport
+var _pv_root: Node3D
+var _pv_figure: Node3D
 
 
 func _update_preview() -> void:
-	if _preview != null and is_instance_valid(_preview):
-		_preview.texture = hud.main.hero_preview(_draft)
+	if _pv_root == null or not is_instance_valid(_pv_root):
+		return
+	if _pv_figure != null and is_instance_valid(_pv_figure):
+		_pv_figure.queue_free()
+	_pv_figure = hud.main.preview_standee(_draft, _pv_root, _pv_cute)
 
 
 func _spent() -> int:
@@ -597,6 +649,11 @@ func _show_pause() -> void:
 	sld.value_changed.connect(func(v: float) -> void: AudioServer.set_bus_volume_db(0, linear_to_db(maxf(v, 0.001))))
 	vrow.add_child(sld)
 	vb.add_child(vrow)
+	vb.add_child(hud._label("Camera", 24))
+	vb.add_child(_cam_slider("Distance", 6.0, 24.0, world.cam_dist, func(v: float) -> void: world.cam_dist = v))
+	vb.add_child(_cam_slider("Tilt", 0.18, 1.15, world.cam_pitch, func(v: float) -> void: world.cam_pitch = v))
+	vb.add_child(_cam_slider("Field of view", 35.0, 75.0, world.cam_fov, func(v: float) -> void: world.cam_fov = v))
+	vb.add_child(_cam_slider("Screen shake", 0.0, 1.5, world.cam_shake, func(v: float) -> void: world.cam_shake = v))
 	var b1 := HBoxContainer.new()
 	b1.add_theme_constant_override("separation", 8)
 	vb.add_child(b1)
@@ -617,7 +674,7 @@ func _show_pause() -> void:
 	var b2 := HBoxContainer.new()
 	b2.add_theme_constant_override("separation", 8)
 	vb.add_child(b2)
-	var style := hud._button("Art style: " + ("Cute" if Game.cute() else "Real"), Hud.PAPER_LIGHT)
+	var style := hud._button("Art style: " + ("Cute" if Game.cute() else "Classic"), Hud.PAPER_LIGHT)
 	style.pressed.connect(func() -> void: hud._on_style())
 	b2.add_child(style)
 	var quit := hud._button("Quit to title", Hud.ROSE)
@@ -627,6 +684,65 @@ func _show_pause() -> void:
 	b2.add_child(quit)
 	hud._vis(pause_panel, true)
 	_fit.call_deferred(pause_panel)
+	Sfx.play("open")
+
+
+func _cam_slider(title: String, lo: float, hi: float, cur: float, set_fn: Callable) -> Control:
+	var row := HBoxContainer.new()
+	var l := hud._label(title, 18)
+	l.custom_minimum_size = Vector2(140, 0)
+	row.add_child(l)
+	var sld := HSlider.new()
+	sld.min_value = lo
+	sld.max_value = hi
+	sld.step = (hi - lo) / 40.0
+	sld.custom_minimum_size = Vector2(300, 24)
+	sld.value = cur
+	sld.value_changed.connect(func(v: float) -> void: set_fn.call(v))
+	row.add_child(sld)
+	return row
+
+
+## End of a day: a card with what moved, and a button that settles it on NEAR.
+func show_day_end(world, day: int) -> void:
+	if day_panel != null:
+		day_panel.queue_free()
+	var moves: int = Chain.pending.size()
+	day_panel = hud._panel(Hud.PAPER_LIGHT)
+	day_panel.visible = false
+	hud.root.add_child(day_panel)
+	hud._center(day_panel)
+	var vb := VBoxContainer.new()
+	vb.add_theme_constant_override("separation", 8)
+	vb.custom_minimum_size = Vector2(480, 0)
+	day_panel.add_child(vb)
+	vb.add_child(hud._label("Day %d is done" % day, 36))
+	var coins := int(Economy.wallets["player"]["coins"])
+	var info := "Every coin that changed hands today is waiting in the ledger: %d move%s.
+You hold %d coins." % [moves, "" if moves == 1 else "s", coins]
+	var il := hud._label(info.replace("\n", "
+"), 18)
+	il.autowrap_mode = TextServer.AUTOWRAP_WORD
+	il.custom_minimum_size = Vector2(460, 0)
+	vb.add_child(il)
+	var why := hud._label("Settling nets those moves into a few transfers and sends them to NEAR testnet. Skip it and they roll into tomorrow.", 15, Hud.INK.lightened(0.2))
+	why.autowrap_mode = TextServer.AUTOWRAP_WORD
+	why.custom_minimum_size = Vector2(460, 0)
+	vb.add_child(why)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 8)
+	vb.add_child(row)
+	var go := hud._button("Settle on NEAR", Hud.GOLD)
+	go.add_theme_font_size_override("font_size", 24)
+	go.pressed.connect(func() -> void:
+		Chain.end_of_day(day)
+		hud._vis(day_panel, false))
+	row.add_child(go)
+	var later := hud._button("Later", Hud.PAPER_LIGHT)
+	later.pressed.connect(func() -> void: hud._vis(day_panel, false))
+	row.add_child(later)
+	hud._vis(day_panel, true)
+	_fit.call_deferred(day_panel)
 	Sfx.play("open")
 
 

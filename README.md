@@ -18,6 +18,19 @@ NearBlocks.
 Built with Godot 4.7 (GL Compatibility) for the NEAR hackathon, `games` track.
 Runs on desktop and in the browser.
 
+## What is new in this build
+
+- Four towns with their own shapes and legends: a green, a hill town under a
+  mountain, a river town with bridges, and a ring-walled market town.
+- A skill tree (T): ink blasts, fire, mend, paper squires and the dragon. Keys 1 to 6 cast.
+- A character creator with a live preview, stats and a dice roll for bonus points.
+- A pause menu (Esc) with account switching and your stats.
+- An inn (sleep after dark for a few coins), a quest-board arrow, a mayor, and
+  townsfolk who sweep, forage and hunt.
+- A clearer NEAR chip: it says what is queued and which day last settled.
+
+To check the claims, see [JUDGING.md](JUDGING.md).
+
 ## Play
 
 **Desktop.** Install Godot 4.7, then `Godot_v4.7-stable_win64.exe --path .`

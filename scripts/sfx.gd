@@ -30,6 +30,7 @@ const GROUPS := {
 	"beam": [["chime_up"], -8.0, 0.05],
 	"shatter": [["shatter", "wood_snap"], -6.0, 0.08],
 	"quest": [["fanfare"], -6.0, 0.0],
+	"levelup": [["chime_up"], -3.0, 0.0],
 	"good": [["good_pluck"], -7.0, 0.05],
 	"bad": [["bad_pluck"], -7.0, 0.05],
 	"open": [["paper_open", "bookFlip1"], -6.0, 0.06],

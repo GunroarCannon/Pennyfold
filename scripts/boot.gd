@@ -98,6 +98,7 @@ func _process(delta: float) -> void:
 			_card.rotation = 0.0
 			_closing = false
 	(_card.material as ShaderMaterial).set_shader_parameter("size", _card.size)
+	(_card.material as ShaderMaterial).set_shader_parameter("offset", _card.position)
 	_card.queue_redraw()
 
 

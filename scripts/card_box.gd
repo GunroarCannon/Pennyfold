@@ -170,10 +170,10 @@ func _draw(ci: RID, rect: Rect2) -> void:
 		tr.seed = seed * 7 + 3
 		match tp:
 			1:
-				_tape(ci, r.position + Vector2(14, 11), -0.72 + tr.randf_range(-0.08, 0.08), 58.0)
+				_tape(ci, r.position + Vector2(7, 6), -0.72 + tr.randf_range(-0.08, 0.08), 58.0)
 			2:
-				_tape(ci, r.position + Vector2(14, 11), -0.72 + tr.randf_range(-0.08, 0.08), 58.0)
-				_tape(ci, Vector2(r.end.x - 14, r.position.y + 11), 0.72 + tr.randf_range(-0.08, 0.08), 58.0)
+				_tape(ci, r.position + Vector2(7, 6), -0.72 + tr.randf_range(-0.08, 0.08), 58.0)
+				_tape(ci, Vector2(r.end.x - 7, r.position.y + 6), 0.72 + tr.randf_range(-0.08, 0.08), 58.0)
 			3:
 				_tape(ci, Vector2(r.get_center().x + tr.randf_range(-24, 24), r.position.y + 1), tr.randf_range(-0.1, 0.1), 66.0)
 

@@ -6,7 +6,7 @@ shader_type canvas_item;
 uniform vec2 size = vec2(1280.0, 720.0);
 uniform float tear = 1.0;
 
-varying vec2 lp;
+uniform vec2 offset = vec2(0.0);
 
 float h21(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 float vn(vec2 p) {
@@ -14,11 +14,10 @@ float vn(vec2 p) {
 	return mix(mix(h21(i), h21(i + vec2(1, 0)), f.x), mix(h21(i + vec2(0, 1)), h21(i + vec2(1, 1)), f.x), f.y);
 }
 
-void vertex() {
-	lp = VERTEX;
-}
-
 void fragment() {
+	// card-space position from the screen, not VERTEX: text is drawn as glyph
+	// quads whose VERTEX is local to each glyph, which cut the title in half
+	vec2 lp = SCREEN_UV * size - offset;
 	float amp = 38.0 * tear;
 	float by = size.y - 28.0 * tear - amp * (vn(vec2(lp.x * 0.02, 1.0)) * 0.7 + vn(vec2(lp.x * 0.11, 5.0)) * 0.3);
 	float dy = by - lp.y;

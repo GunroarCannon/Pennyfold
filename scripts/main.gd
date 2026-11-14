@@ -131,6 +131,8 @@ var prompt := ""
 var clock := 0.0
 var hour := 6.0
 var nearby_shop := ""
+var nearby_inn := ""
+var mayors := {}
 var nearby_npc: Npc = null
 var nearby_gather := -1
 var near_board := false
@@ -153,6 +155,8 @@ var cam_focus := Vector3.ZERO
 var cam_yaw := 0.0
 var cam_pitch := 0.55
 var cam_dist := 14.0
+var cam_fov := 50.0
+var cam_shake := 1.0
 var talk_k := 0.0
 var player_idle := 0.0
 var view_dir := {}
@@ -257,7 +261,7 @@ func _ready() -> void:
 	_spawn_merchants()
 
 	camera = Camera3D.new()
-	camera.fov = 50.0
+	camera.fov = cam_fov
 	camera.far = 420.0
 	add_child(camera)
 	camera.current = true
@@ -354,8 +358,12 @@ func _apply_debug_args() -> void:
 			player["heading"] = Vector2(1, -0.3).normalized()
 			skills.known["blast"] = 1
 			cast.call_deferred("blast")
+		"title":
+			Game.started = false
+			hud.show_title.call_deferred()
 		"creator":
 			Game.hero["made"] = false
+			hud.table.visible = true
 			hud.menus.show_creator.call_deferred(func() -> void: pass)
 		"skilltree":
 			skills.known["blast"] = 1
@@ -931,6 +939,7 @@ func _build_town_props(tn: Dictionary) -> void:
 	if tn["id"] == "sunny":
 		board_pos = (o + (L["board"] as Vector2)) * TILE
 		_billboard(Bake.make(bake_root, "board", {}, Vector2i(256, 280)), 2.0, _to3(board_pos))
+		_board_arrow(_to3(board_pos) + Vector3(0, 4.6, 0))
 	var well := (o + (L["well"] as Vector2)) * TILE
 	_billboard(Bake.make(bake_root, "well", {}, Vector2i(220, 256)), 1.9, _to3(well))
 	_build_legend(tn)
@@ -997,6 +1006,29 @@ func _build_bridges(tn: Dictionary) -> void:
 				_mesh(_box(Vector3(0.12, 0.6, 0.12)), rail, Vector3(-span * 0.5 + 0.2 + k * (span - 0.4) / 5.0, 0.38, sgn * 0.85), root)
 
 
+## A bobbing gold arrow over a quest board. It draws through walls, so the
+## board can be found from anywhere in town even when buildings are in the way.
+func _board_arrow(at: Vector3) -> void:
+	var l := Label3D.new()
+	l.text = "QUESTS
+▼"
+	l.font = font
+	l.font_size = 64
+	l.outline_size = 22
+	l.modulate = Color(1.0, 0.82, 0.25)
+	l.outline_modulate = Color(0.17, 0.11, 0.07)
+	l.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	l.no_depth_test = true
+	l.fixed_size = true
+	l.pixel_size = 0.0007
+	l.render_priority = 5
+	l.position = at
+	add_child(l)
+	var tw := l.create_tween().set_loops()
+	tw.tween_property(l, "position:y", at.y + 0.5, 0.7).set_trans(Tween.TRANS_SINE)
+	tw.tween_property(l, "position:y", at.y, 0.7).set_trans(Tween.TRANS_SINE)
+
+
 func _build_landmarks() -> void:
 	_apply_world_solids()
 	var paper := Cardboard.paper()
@@ -1020,6 +1052,13 @@ func _build_landmarks() -> void:
 				add_child(sails)
 				var tw := sails.create_tween().set_loops()
 				tw.tween_property(sails, "rotation:z", -TAU, 9.0).from(0.0)
+				# the tower is a solid thing: block the tiles under it
+				var tc := c + Vector2(-96.0, -96.0)
+				for tx in range(-2, 3):
+					for ty in range(-2, 3):
+						var tp := tc + Vector2(tx, ty) * TILE * 0.5
+						if tp.distance_to(tc) < 62.0:
+							astar.set_point_solid(_tile(tp), true)
 				for i in 7:
 					_add_gather("wheat", c + Vector2(rng.randf_range(-170, 170), rng.randf_range(-40, 150)))
 			"mine":
@@ -1087,15 +1126,20 @@ func _build_clouds() -> void:
 
 
 ## The hero's look from the character screen (a default hero until it is made).
-## A front-facing picture of a hero draft for the character creator.
-func hero_preview(h: Dictionary) -> Texture2D:
-	var look := hero_look(h)
-	var d: Dictionary
-	if cute:
-		d = Bake.make_rig(bake_root, "chibi_front", look, Vector2i(208, 260))
-	else:
-		d = Bake.make_rig(bake_root, "person", look, Vector2i(256, 320))
-	return d["tex"]
+## The character creator's live figure: a real standee in its own little world,
+## so what you pick is exactly what you will play. Returns the standee.
+func preview_standee(h: Dictionary, parent: Node3D, want_cute: bool) -> Standee:
+	var was := cute
+	cute = want_cute
+	var baked := _bake_person(hero_look(h), Vector2i(256, 320))
+	var st := _make_standee(baked, 1.75 if want_cute else 2.3, "")
+	cute = was
+	remove_child(st)
+	parent.add_child(st)
+	st.show_hp = false
+	if st.views.size() >= 2:
+		st.set_view("front")
+	return st
 
 
 func hero_look(draft: Dictionary = {}) -> Dictionary:
@@ -1271,6 +1315,10 @@ func _spawn_npc(work: Dictionary, houses: Array, tn: Dictionary) -> void:
 		n.job_id = work["id"]
 		n.job_kind = job_kind
 		n.job_title = KINDS[job_kind]["job"]
+	elif not mayors.has(tn["id"]) and job_kind == "":
+		mayors[tn["id"]] = n.id
+		n.job_title = "Mayor"
+		n.display_name = "Mayor " + n.display_name
 	Economy.add_wallet(n.id, 30 if founding_size == 0 else 0)
 	if job_kind == "guard":
 		n.max_hp = 90.0
@@ -1525,6 +1573,41 @@ func random_road_point(city := "sunny") -> Vector2:
 	if pts.is_empty():
 		return start_pos
 	return (o + (pts[rng.randi() % pts.size()] as Vector2)) * TILE
+
+
+## Where an NPC's errand takes them: doorways to sweep, the edge of town for
+## herbs and game (and back home), or the mayor's round of board, well and shops.
+func errand_points(n: Npc, kind: String) -> Array:
+	var out: Array = []
+	var doors: Array = []
+	for b in buildings:
+		if b["city"] == n.city:
+			doors.append(b["door"])
+	match kind:
+		"clean":
+			doors.shuffle()
+			for i in mini(3, doors.size()):
+				out.append(doors[i] + Vector2(-20.0, 10.0))
+		"herbs", "hunt":
+			var tn := town_by_id(n.city)
+			var o := Vector2(tn.get("origin", Vector2i.ZERO))
+			var best := Vector2.INF
+			var bd := -1.0
+			for k in 4:
+				var pt := random_road_point(n.city)
+				var d := pt.distance_to(Vector2(tn["layout"]["center"] + o) * TILE) if tn.has("layout") and tn["layout"].has("center") else pt.distance_to(n.pos)
+				if d > bd:
+					bd = d
+					best = pt
+			out.append(best)
+			out.append(door_of(n.home_id))
+		"mayor":
+			if board_pos != Vector2.ZERO:
+				out.append(board_pos + Vector2(0, 50))
+			doors.shuffle()
+			for i in mini(2, doors.size()):
+				out.append(doors[i] + Vector2(-20.0, 10.0))
+	return out
 
 
 func find_path(a: Vector2, b: Vector2) -> PackedVector2Array:
@@ -2101,7 +2184,11 @@ func _process(delta: float) -> void:
 			n.day_job = ""
 	if prev_hour > hour:
 		_roll_events()
-		Chain.end_of_day(day_number() - 1)
+		if Game.started and Chain.mode != "offline" and _arg_value("--report=") == "" and _arg_value("--demo=") == "" and DisplayServer.get_name() != "headless":
+			# the player decides: settle the day on NEAR now, or let it roll over
+			hud.menus.show_day_end(self, day_number() - 1)
+		else:
+			Chain.end_of_day(day_number() - 1)
 		if _arg_value("--report=") != "":
 			print("---- end of day %d ----" % (day_number() - 1))
 			print(hud._ledger_text(self))
@@ -2128,6 +2215,7 @@ func _process(delta: float) -> void:
 		production_timer = 0.0
 		Economy.produce()
 		_restock()
+	_update_quest_marks(delta)
 	spawn_timer += delta
 	if spawn_timer >= 5.0:
 		spawn_timer = 0.0
@@ -2349,6 +2437,8 @@ func _interact() -> void:
 		_gather(nearby_gather)
 	elif nearby_temple != "":
 		_pray(nearby_temple)
+	elif nearby_inn != "":
+		_sleep_at(nearby_inn)
 	elif nearby_shop != "":
 		if quests.hand_in(self, nearby_shop):
 			return
@@ -2367,6 +2457,25 @@ func _interact() -> void:
 
 
 const TEMPLE_FEE := 6
+const INN_FEE := 12
+
+
+## The inn: pay for a bed, wake at dawn fully rested. The fee is the innkeeper's
+## real income, so a travelling player feeds the town like anyone else.
+func _sleep_at(inn: String) -> void:
+	if hour < 19.0 and hour >= 5.0:
+		Economy.message.emit("The innkeeper laughs. Beds are for after dark (from 7 in the evening).")
+		return
+	if not Economy.pay("player", inn, INN_FEE):
+		Economy.message.emit("A bed costs %d coins. You do not have them." % INN_FEE)
+		return
+	Economy.message.emit("You pay %d coins and sleep until morning." % INN_FEE)
+	hud.fade_through(func() -> void:
+		player["hp"] = player["max_hp"]
+		player["stamina"] = player["max_stamina"]
+		player["ink"] = player["max_ink"]
+		clock = (floorf(clock / DAY_SECONDS) + 1.0) * DAY_SECONDS
+		Economy.message.emit("Morning. You feel rested."))
 
 
 ## The shrine heals for a small offering; the coins are the shrine's real income.
@@ -2904,9 +3013,86 @@ func _close_dialog() -> void:
 	dialog_npc = null
 
 
+var _talk: Dictionary = {}
+
+
+## One extra line of small talk, picked by who they are, where, the hour, their
+## belly and what is happening in town. data/talk.json holds the pools.
+func _small_talk(n: Npc) -> String:
+	if _talk.is_empty():
+		var f := FileAccess.open("res://data/talk.json", FileAccess.READ)
+		if f != null:
+			var parsed: Variant = JSON.parse_string(f.get_as_text())
+			if parsed is Dictionary:
+				_talk = parsed
+		if _talk.is_empty():
+			_talk = {"_": true}
+	var pools: Array = []
+	for e in Economy.active_events:
+		if e["city"] == n.city and String(e["id"]) == "raiders":
+			pools.append(_talk.get("raid", []))
+	if n.hunger > 60.0:
+		pools.append(_talk.get("hungry", []))
+	elif n.hunger < 25.0:
+		pools.append(_talk.get("fed", []))
+	if n.is_hero():
+		pools.append(_talk.get("hero", []))
+	if n.job_title == "Mayor":
+		pools.append(_talk.get("mayor", []))
+	pools.append(_talk.get("night" if hour >= 19.0 or hour < 5.0 else "morning", []) if hour < 9.0 or hour >= 19.0 else [])
+	var jobs: Dictionary = _talk.get("job", {})
+	pools.append(jobs.get(n.job_kind, jobs.get("default", [])))
+	pools.append(_talk.get("city", {}).get(n.city, []))
+	var flat: Array = []
+	for p in pools:
+		flat.append_array(p)
+	if flat.is_empty():
+		return ""
+	# a different line each visit, but stable within one conversation
+	return String(flat[(absi(n.id.hash()) + day_number() * 7 + int(Time.get_ticks_msec() / 40000)) % flat.size()])
+
+
+var _mark_t := 0.0
+
+
+## A gold "!" over anyone who has a quest to give.
+func _update_quest_marks(delta: float) -> void:
+	_mark_t -= delta
+	if _mark_t > 0.0:
+		return
+	_mark_t = 2.0
+	var givers := {}
+	for q in quests.offers:
+		givers[q["giver"]] = true
+	for n in npcs:
+		if n is Merchant or not is_instance_valid(n.view):
+			continue
+		var gid: String = n.job_id if n.job_kind != "guard" else _guard_post_id(n.city)
+		var want: bool = n.job_id != "" and givers.has(gid) and not n.inside
+		var mk: Node = n.view.get_node_or_null("QuestMark")
+		if want and mk == null:
+			var l := Label3D.new()
+			l.name = "QuestMark"
+			l.text = "!"
+			l.font_size = 120
+			l.pixel_size = 0.006
+			l.modulate = Color(1.0, 0.82, 0.2)
+			l.outline_modulate = Color(0.25, 0.14, 0.05)
+			l.outline_size = 16
+			l.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+			l.no_depth_test = true
+			l.fixed_size = false
+			l.position = Vector3(0, Monster.height_of("wolf", cute) * 0 + 3.4, 0)
+			n.view.add_child(l)
+		elif not want and mk != null:
+			mk.queue_free()
+
+
 func _talk_line(n: Npc) -> String:
+	var extra := _small_talk(n)
+	extra = (" " + extra) if extra != "" else ""
 	if n is Merchant:
-		return "I am %s, a travelling merchant. Right now I am %s. I carry %d coins." % [n.display_name, n.route_text(self), int(Economy.wallets[n.id]["coins"])]
+		return "I am %s, a travelling merchant. Right now I am %s. I carry %d coins.%s" % [n.display_name, n.route_text(self), int(Economy.wallets[n.id]["coins"]), extra]
 	var coins := int(Economy.wallets[n.id]["coins"])
 	var mood := "I could eat." if n.hunger > 60.0 else "I ate well today."
 	if n.hunger > 90.0:
@@ -2914,8 +3100,10 @@ func _talk_line(n: Npc) -> String:
 	if n.job_id != "":
 		var place: String = building(n.job_id)["name"]
 		var till := int(Economy.wallets[n.job_id]["coins"]) if Economy.wallets.has(n.job_id) else 0
-		return "I am %s, %s at the %s. %s I have %d coin%s, the %s has %d in the till." % [n.display_name, n.job_title.to_lower(), place, mood, coins, "" if coins == 1 else "s", place, till]
-	return "I am %s. No steady work for me. %s %d coins to my name." % [n.display_name, mood, coins]
+		return "I am %s, %s at the %s. %s I have %d coin%s, the %s has %d in the till." % [n.display_name, n.job_title.to_lower(), place, mood, coins, "" if coins == 1 else "s", place, till] + extra
+	if n.job_title == "Mayor":
+		return "%s. I mind the town and the town minds its coins. %s" % [n.display_name, mood] + extra
+	return "I am %s. No steady work for me. %s %d coins to my name." % [n.display_name, mood, coins] + extra
 
 
 func _talk_options(n: Npc) -> Array:
@@ -2946,6 +3134,12 @@ func _talk_options(n: Npc) -> Array:
 	opts.append({"text": "Any news?", "gossip": true})
 	opts.append({"text": "Bye.", "bye": true})
 	return opts
+
+
+## An NPC who was leading the player to their shop has reached the door.
+func lead_arrived(n: Npc, shop: String) -> void:
+	if Vector2(player["pos"]).distance_to(door_of(shop)) < 240.0 and not career.refuses(self, shop):
+		hud.open_shop(shop)
 
 
 func dialog_choice(opt: Dictionary) -> void:
@@ -2990,11 +3184,19 @@ func dialog_choice(opt: Dictionary) -> void:
 		career.quit(self)
 		hud.set_dialog_text("Pity. The door is open if you change your mind.", [{"text": "Bye.", "bye": true}])
 	elif opt.has("shop"):
+		var sid: String = opt["shop"]
 		_close_dialog()
-		if career.refuses(self, opt["shop"]):
+		if career.refuses(self, sid):
 			Economy.message.emit("They will not trade with you today.")
+		elif n is Merchant or n.pos.distance_to(door_of(sid)) < 130.0:
+			# the goods are on their back, or they are already at the counter
+			n.say("Have a look.")
+			hud.open_shop(sid)
 		else:
-			hud.open_shop(opt["shop"])
+			n.say("Alright, follow me.")
+			n.lead_to = sid
+			n.lead_t = 0.0
+			n.state = "lead"
 	elif opt.has("gossip"):
 		hud.set_dialog_text(_gossip(n), _talk_options(n))
 	else:
@@ -3150,7 +3352,7 @@ func _event_started(e: Dictionary) -> void:
 					n.say("Hooray!")
 		"raiders":
 			# wolves come out of the hills to the road by the city; guards and the treasury respond
-			for i in 3:
+			for i in 4:
 				var a := rng.randf() * TAU
 				var q := _free_spot_near(c + Vector2(cos(a), sin(a)) * rng.randf_range(520.0, 760.0))
 				_add_monster("wolf", q, 1)
@@ -3367,7 +3569,13 @@ func _resolve_deaths() -> void:
 		else:
 			var guard := npc_by_id(m.killer_id)
 			if guard != null and guard.job_id == "":
-				guard.say("Got it!")
+				var tre := _guard_post_id(guard.city)
+				var pay := BOUNTY / 2
+				if tre != "player" and Economy.pay(tre, guard.id, pay):
+					guard.say("Got it! The treasury owes me %d." % pay)
+					Economy.message.emit("%s stood against a %s and was paid %d coins from the treasury." % [guard.display_name, m.display_name, pay])
+				else:
+					guard.say("Got it!")
 			elif guard != null and Economy.pay(guard.job_id, guard.id, BOUNTY):
 				guard.say("Bounty earned.")
 				Economy.message.emit("%s the guard felled a %s and took a %d coin bounty." % [guard.display_name, m.display_name, BOUNTY])
@@ -3447,6 +3655,7 @@ func _teleport(p: Vector2) -> void:
 func _find_nearby() -> void:
 	var p: Vector2 = player["pos"]
 	nearby_shop = ""
+	nearby_inn = ""
 	nearby_temple = ""
 	nearby_npc = null
 	nearby_gather = -1
@@ -3460,7 +3669,9 @@ func _find_nearby() -> void:
 	for b in buildings:
 		if b["kind"] == "temple" and p.distance_to(b["door"]) < 60.0:
 			nearby_temple = b["id"]
-	if nearby_shop == "" and nearby_temple == "":
+		elif b["kind"] == "inn" and p.distance_to(b["door"]) < 60.0:
+			nearby_inn = b["id"]
+	if nearby_shop == "" and nearby_temple == "" and nearby_inn == "":
 		nearby_npc = nearest_npc(p, 60.0)
 	if hud.shop_id != "" and p.distance_to(door_of(hud.shop_id)) > 140.0 and dialog_npc == null:
 		hud.close_shop()
@@ -3469,6 +3680,8 @@ func _find_nearby() -> void:
 		parts.append(_use_key() + "  gather %s" % Economy.GOODS[gathers[nearby_gather]["good"]]["name"])
 	elif nearby_temple != "":
 		parts.append(_use_key() + "  pray at the shrine (%d coins heals you)" % TEMPLE_FEE)
+	elif nearby_inn != "":
+		parts.append(_use_key() + "  sleep at the inn (%d coins, after dark)" % INN_FEE)
 	elif nearby_shop != "":
 		if building(nearby_shop)["kind"] == "exchange":
 			parts.append(_use_key() + "  read the price board")
@@ -3568,11 +3781,11 @@ func _update_camera(delta: float) -> void:
 	var pos := focus + off
 	var ground := world.height_at(Vector2(pos.x, pos.z) / K) + 1.2
 	pos.y = maxf(pos.y, ground)
-	var sh := Vector3(randf_range(-1.0, 1.0), randf_range(-1.0, 1.0), 0.0) * shake * 0.25
+	var sh := Vector3(randf_range(-1.0, 1.0), randf_range(-1.0, 1.0), 0.0) * shake * 0.25 * cam_shake
 	camera.position = pos + sh
 	camera.look_at(focus + sh * 0.5)
 	fov_kick = move_toward(fov_kick, 0.0, delta * 22.0)
-	camera.fov = 50.0 - fov_kick * 0.6 + float(player["dash_t"] > 0.0) * 3.0 - talk_k * 6.0
+	camera.fov = cam_fov - fov_kick * 0.6 + float(player["dash_t"] > 0.0) * 3.0 - talk_k * 6.0
 	Bend.update(cam_focus, -Vector2(off.x, off.z))
 	world.props_material.set_shader_parameter("player_pos", target)
 	world.props_material.set_shader_parameter("cam_pos", camera.position)

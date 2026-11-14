@@ -97,7 +97,8 @@ func gain(world, amount: int, why := "") -> void:
 			skills.grant(int(skills.data.get("points_per_level", 1)))
 	if up > 0:
 		apply_stats(world, true)
-		world.sfx("quest")
+		world.sfx("levelup")
+		world.get_tree().create_timer(0.18).timeout.connect(func() -> void: world.sfx("heal", -3.0))
 		Fx.ring(world, world._to3(world.player["pos"]), Color(1.0, 0.85, 0.3), 5.0)
 		Fx.burst(world, world._to3(world.player["pos"]) + Vector3(0, 2.0, 0), [Color(1, 0.85, 0.3), Color(0.5, 0.85, 1.0), Color(1, 1, 1)], 50, 6.0)
 		world.hud.rip("level", "LEVEL UP!", "Level %d" % level, Color(1.0, 0.62, 0.15))

@@ -1,0 +1,27 @@
+{
+	"job": {
+		"baker": ["The oven does not care about my feelings, only the flour.", "Bread first, gossip second."],
+		"farmer": ["The soil remembers who was kind to it.", "Rain is a loan, not a gift."],
+		"smith": ["Hot metal teaches patience. Or burns.", "Bring ore and I will bring edges."],
+		"guard": ["I watch the road so you can complain about the prices.", "Wolves keep to the wilds, mostly."],
+		"miner": ["The deep rock hums at night.", "Ore does not dig itself, whatever the tavern says."],
+		"fisher": ["The river is honest. The fish are not.", "A slow day means a long story."],
+		"innkeeper": ["Everyone sleeps eventually. I count on it.", "Twelve coins, a bed and no questions."],
+		"herbalist": ["Half of medicine is knowing which leaf not to chew.", "Moss for aches, mint for manners."],
+		"merchant": ["Prices are weather you can argue with.", "Buy where it is cheap, sell where it is missed."],
+		"default": ["Quiet day. I like them.", "Keep your coins close and your friends closer."]
+	},
+	"city": {
+		"sunny": ["Sunny Town is small, but the bread is loud.", "They say the old mill still grinds at night."],
+		"copperhead": ["The mountain keeps what it wants. We keep the rest.", "Copperhead rings with hammers from dawn."],
+		"saltmere": ["Mind the bridges after rain, they sing.", "Saltmere remembers every flood, politely."],
+		"highmarket": ["Highmarket never closes, only changes hands.", "The ring wall was built to keep prices in."]
+	},
+	"hungry": ["My stomach is filing a complaint.", "If I smell bread, I am following it."],
+	"fed": ["Full belly, light feet.", "Good day to be on two legs."],
+	"night": ["Late for honest folk.", "The lanterns look kinder after dark."],
+	"morning": ["Early light, early coin.", "The town is waking up. So am I."],
+	"hero": ["If a wolf comes in here, I will have words with it.", "I do not run from wolves. Mostly."],
+	"mayor": ["A town is just a ledger with chimneys.", "Every coin in the treasury has a name on it."],
+	"raid": ["Wolves at the edge! Stay close to the guards.", "I heard howling past the wall."]
+}

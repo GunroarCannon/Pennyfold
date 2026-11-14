@@ -17,6 +17,14 @@ var job_id := ""
 var job_kind := ""
 var job_title := "Resident"
 var day_job := ""
+var lead_to := ""
+## A small errand in the leisure hours: "clean", "herbs", "hunt" or "mayor".
+var errand := ""
+var errand_pts: Array = []
+var errand_i := 0
+var errand_wait := 0.0
+var errand_cd := 20.0
+var lead_t := 0.0
 var pos := Vector2.ZERO
 var hunger := 20.0
 var hp := 40.0
@@ -59,6 +67,14 @@ func coins() -> int:
 	return int(Economy.wallets[id]["coins"])
 
 
+var run := 1.0
+
+
+## A steady one in five of the townsfolk is brave enough to fight.
+func is_hero() -> bool:
+	return job_kind != "guard" and not (self is Merchant) and absi(id.hash()) % 5 == 0
+
+
 func update(delta: float, world) -> void:
 	hunger = minf(100.0, hunger + delta * 0.3)
 	eat_cd = maxf(0.0, eat_cd - delta)
@@ -73,8 +89,30 @@ func update(delta: float, world) -> void:
 	var hour: float = world.hour
 	var awake: bool = hour >= wake and hour < bed
 
-	# 1. flee (everyone but guards)
-	if job_kind != "guard":
+	# 0. heroes: about one townsperson in five stands and fights a beast that
+	# comes into town, and is paid a bounty from the treasury if it falls
+	if is_hero() and hp >= max_hp * 0.4 and awake:
+		var foe = world.nearest_monster(pos, 240.0)
+		if foe != null and world.in_defense_zone(foe.pos) and not Monster.is_big(foe.kind):
+			inside = false
+			if state != "fight":
+				say("Not in my town!")
+			state = "fight"
+			if pos.distance_to(foe.pos) < 46.0:
+				moving = 0.0
+				if absf(foe.pos.x - pos.x) > 12.0:
+					facing = signf(foe.pos.x - pos.x)
+				if atk_cd <= 0.0:
+					atk_cd = 0.9
+					world.npc_strike(self, foe, 7.0)
+			else:
+				_go(foe.pos, delta, world, 40.0)
+			return
+		if state == "fight":
+			state = "idle"
+
+	# 1. flee (everyone but guards, and heroes while they are healthy)
+	if job_kind != "guard" and not (is_hero() and hp >= max_hp * 0.4):
 		var threat = world.nearest_monster(pos, 170.0)
 		if threat != null:
 			if state != "flee":
@@ -84,10 +122,43 @@ func update(delta: float, world) -> void:
 		if state == "flee":
 			if threat == null:
 				scare -= delta
-			if _go(world.door_of(home_id), delta, world, 12.0):
+			# run for home if that is away from the monster, otherwise straight
+			# away from it, and faster than a stroll
+			var hd: Vector2 = world.door_of(home_id)
+			var dest := hd
+			if threat != null and hd.distance_to(threat.pos) < pos.distance_to(threat.pos) + 20.0:
+				var away: Vector2 = (pos - threat.pos).normalized()
+				dest = pos + away * 220.0
+				if not world.walkable(dest):
+					dest = pos + away.rotated(1.2) * 220.0
+				if not world.walkable(dest):
+					dest = hd
+			run = 1.7
+			var arrived: bool = _go(dest, delta, world, 12.0)
+			run = 1.0
+			if arrived and dest == hd:
 				inside = true
 			if scare <= 0.0:
 				state = "idle"
+			return
+
+	# 1b. leading the player to the shop door, then letting them in
+	if state == "lead":
+		lead_t += delta
+		if Vector2(world.player["pos"]).distance_to(pos) > 280.0 and lead_t < 60.0:
+			moving = 0.0
+			return
+		if lead_t > 60.0:
+			state = "idle"
+		elif _go(world.door_of(lead_to), delta, world, 26.0):
+			state = "idle"
+			wait = 3.0
+			say("Here is my store.")
+			world.lead_arrived(self, lead_to)
+			return
+		else:
+			if randf() < delta * 0.12:
+				say("This way...")
 			return
 
 	# 2. guard duty: defend the town edge, fall back when badly hurt
@@ -183,6 +254,16 @@ func update(delta: float, world) -> void:
 			shop_target = tavern
 			return
 
+	# 7a. errands: sweep the doorways, forage, hunt, or (the mayor) do the rounds
+	errand_cd = maxf(0.0, errand_cd - delta)
+	if errand != "":
+		if _do_errand(delta, world):
+			return
+	elif errand_cd <= 0.0 and hunger < 60.0:
+		errand_cd = randf_range(50.0, 110.0)
+		if randf() < 0.55:
+			_start_errand(world)
+
 	# 7. stroll along the roads, pause, stroll on
 	if state != "idle":
 		state = "idle"
@@ -233,7 +314,7 @@ func _go(dest: Vector2, delta: float, world, arrive: float) -> bool:
 		_side_t -= delta
 		dir = (dir + Vector2(-dir.y, dir.x) * _side_sign * 0.9).normalized()
 	var before := pos
-	pos = world.try_move(pos, dir * SPEED * delta, 8.0)
+	pos = world.try_move(pos, dir * SPEED * run * delta, 8.0)
 	moving = 1.0
 	if absf(dir.x) > 0.45:
 		facing = signf(dir.x)
@@ -248,3 +329,67 @@ func _go(dest: Vector2, delta: float, world, arrive: float) -> bool:
 		_stuck = 0.0
 		_stuck_total = maxf(0.0, _stuck_total - delta)
 	return false
+
+
+const CLEAN_LINES := ["Sweeping up.", "Dust everywhere.", "Somebody tracked mud in.", "Swept. Again."]
+const HERB_LINES := ["Sage, and a bit of thyme.", "Found a good patch.", "Mind the nettles.", "Look at this one."]
+const HUNT_LINES := ["Quiet. Too quiet.", "Tracks. Fresh ones.", "Nothing yet.", "Something moved."]
+const MAYOR_LINES := ["Nobody voted for the pothole.", "The board looks full. Good.", "Order, order.", "A tidy town is a paid-up town."]
+
+
+func _start_errand(world) -> void:
+	var kinds: Array = ["clean", "clean", "herbs", "hunt"]
+	if job_title == "Mayor":
+		kinds = ["mayor", "mayor", "clean"]
+	elif job_id != "":
+		kinds = ["clean"]
+	errand = kinds[randi() % kinds.size()]
+	errand_pts = world.errand_points(self, errand)
+	errand_i = 0
+	errand_wait = 0.0
+	if errand_pts.is_empty():
+		errand = ""
+		return
+	match errand:
+		"herbs":
+			say("Off to pick herbs.")
+		"hunt":
+			say("Off to hunt for supper.")
+		"mayor":
+			say("Time for my rounds.")
+		_:
+			say("Time to tidy up.")
+
+
+## Walks the errand's points one after another. True while it is still going.
+func _do_errand(delta: float, world) -> bool:
+	if errand_i >= errand_pts.size():
+		errand = ""
+		state = "idle"
+		wait = 2.0
+		return false
+	state = "errand"
+	var dest: Vector2 = errand_pts[errand_i]
+	if errand_wait > 0.0:
+		errand_wait -= delta
+		moving = 0.0
+		if errand_wait <= 0.0:
+			errand_i += 1
+		return true
+	if _go(dest, delta, world, 22.0):
+		errand_wait = randf_range(2.0, 4.0)
+		var lines: Array = CLEAN_LINES
+		match errand:
+			"herbs":
+				lines = HERB_LINES
+			"hunt":
+				lines = HUNT_LINES
+			"mayor":
+				lines = MAYOR_LINES
+		if errand_i < errand_pts.size() - 1 or errand == "clean":
+			say(lines[randi() % lines.size()])
+		elif errand == "herbs":
+			say("Home with a basketful.")
+		elif errand == "hunt":
+			say("Nothing today. Tomorrow.")
+	return true
