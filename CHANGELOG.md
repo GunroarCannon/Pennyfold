@@ -2,6 +2,14 @@
 
 ## Unreleased (2026-11-14)
 
+### Shared world, raids, gear, gold
+- Shared world server (`server/world_server.mjs`): players see each other and chat. NPCs and economies still run on each client from the shared seed.
+- Raids: the server runs one shared dragon with a common health pool. Hits are clamped and rate limited server-side; the top damage is announced.
+- Character creator: 17 hairstyles (including long, wavy, bob, ponytail, pigtails, buns, braid) and 12 hair colours. The spiky style is now one solid shape.
+- Hats, clothes, armour and weapons are bought in the armoury (smithy, foundry) and the hatter (weaver, market). Coins go to the shop till. Armour cuts damage taken, weapons add damage.
+- Monsters drop real gold coins on the ground, paid out of the nearest town treasury on pickup, so coins are still conserved.
+- Monsters come in Brute and Swift builds, with bigger Fierce and Dire tiers. New calamities: Wolf Moon and Bog Surge.
+
 ### Mobile and web
 - Touch controls: floating stick (edge sprints), cardboard action discs, menu column (map, quests, ledger, bestiary, help), camera drag and pinch zoom. Touch mode turns on for phones, mobile exports, `--touch`, or the first finger.
 - Touch-friendly dialog, tutorial, help and title text; safe areas; stretch `expand`, sensor landscape.

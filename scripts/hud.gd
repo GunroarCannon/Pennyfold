@@ -957,9 +957,16 @@ Dire form seen!" if int(e["best_tier"]) >= 2 else "")], 15, INK.lightened(0.15))
 	return card
 
 
+## True while the shop panel shows the gear catalogue (hats, armour, weapons).
+var shop_gear := false
+var gear_slot := ""
+
+
 func open_shop(id: String) -> void:
 	if id == "" or not Economy.shops.has(id):
 		return
+	shop_gear = false
+	gear_slot = ""
 	if prices_panel != null:
 		_vis(prices_panel, false)
 	shop_id = id
@@ -994,6 +1001,10 @@ func _rebuild_shop() -> void:
 	head.add_child(_label("Till %d" % int(Economy.wallets[shop_id]["coins"]), 22))
 	head.add_child(_icon("coins_stacks_of_dollars", 28))
 	head.add_child(_label("You %d" % int(Economy.wallets["player"]["coins"]), 22))
+	var gtype := Gear.shop_type(str(s.get("kind", "")))
+	if shop_gear and gtype != "":
+		_gear_view(vb, gtype)
+		return
 	var cols := HBoxContainer.new()
 	cols.add_theme_constant_override("separation", 14)
 	vb.add_child(cols)
@@ -1017,9 +1028,98 @@ func _rebuild_shop() -> void:
 	var tip := _label("Prices follow stock: cheap when shelves are full, dear when they are empty.", 16)
 	tip.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	foot.add_child(tip)
+	if gtype != "":
+		var gb := _button(Gear.shop_title(gtype), GOLD)
+		gb.pressed.connect(func() -> void:
+			shop_gear = true
+			gear_slot = ""
+			_rebuild_shop())
+		foot.add_child(gb)
 	var close := _button("Close (Esc)")
 	close.pressed.connect(close_shop)
 	foot.add_child(close)
+
+
+## The gear catalogue: tabs per kind of item, a card per item with Buy / Wear.
+func _gear_view(vb: VBoxContainer, gtype: String) -> void:
+	var slots: Array = []
+	for sl in Gear.SLOT_ORDER:
+		if not Gear.items_for(gtype, sl).is_empty():
+			slots.append(sl)
+	if gear_slot == "" or gear_slot not in slots:
+		gear_slot = slots[0]
+	var tabs := HBoxContainer.new()
+	tabs.add_theme_constant_override("separation", 6)
+	vb.add_child(tabs)
+	tabs.add_child(_label(Gear.shop_title(gtype), 22))
+	for sl in slots:
+		var tb := _button(Gear.SLOT_NAMES[sl], GOLD if sl == gear_slot else PAPER_LIGHT)
+		tb.pressed.connect(func() -> void:
+			gear_slot = sl
+			_rebuild_shop())
+		tabs.add_child(tb)
+	var panel := _panel(PAPER_LIGHT)
+	vb.add_child(panel)
+	var grid := GridContainer.new()
+	grid.columns = 2
+	grid.add_theme_constant_override("h_separation", 8)
+	grid.add_theme_constant_override("v_separation", 6)
+	var sc := ScrollContainer.new()
+	sc.custom_minimum_size = Vector2(800, 300)
+	sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	panel.add_child(sc)
+	sc.add_child(grid)
+	for id in Gear.items_for(gtype, gear_slot):
+		grid.add_child(_gear_card(id))
+	var foot := HBoxContainer.new()
+	vb.add_child(foot)
+	var tip := _label("Worn gear shows on your hero. Armour and weapons change how much you hurt and are hurt.", 16)
+	tip.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	foot.add_child(tip)
+	var back := _button("Back to the shelf")
+	back.pressed.connect(func() -> void:
+		shop_gear = false
+		_rebuild_shop())
+	foot.add_child(back)
+	var close := _button("Close (Esc)")
+	close.pressed.connect(close_shop)
+	foot.add_child(close)
+
+
+func _gear_card(id: String) -> Control:
+	var it: Dictionary = Gear.ITEMS[id]
+	var card := PanelContainer.new()
+	var st := _style(NOTE, 2, 5)
+	st.set_content_margin_all(8)
+	card.add_theme_stylebox_override("panel", st)
+	card.custom_minimum_size = Vector2(392, 0)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 8)
+	card.add_child(row)
+	var info := VBoxContainer.new()
+	info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(info)
+	info.add_child(_label(str(it["name"]), 19))
+	info.add_child(_label("%s   %d coins" % [Gear.effect_text(id), int(it["price"])], 15, INK.lightened(0.2)))
+	var own := Gear.owns(id)
+	var b: Button
+	if not own:
+		b = _button("Buy", GOLD)
+		b.disabled = int(Economy.wallets["player"]["coins"]) < int(it["price"])
+		b.pressed.connect(func() -> void:
+			if Gear.buy(id, shop_id):
+				Gear.toggle(id)
+				main.apply_hero(false)
+				Sfx.play("coin")
+				_rebuild_shop())
+	else:
+		b = _button("Take off" if Gear.worn(id) else "Wear", Color(0.70, 0.86, 0.62))
+		b.pressed.connect(func() -> void:
+			Gear.toggle(id)
+			main.apply_hero(false)
+			_rebuild_shop())
+	row.add_child(b)
+	return card
 
 
 func _shop_column(title: String, parent: Control) -> VBoxContainer:

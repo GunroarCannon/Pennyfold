@@ -326,6 +326,15 @@ func _apply_debug_args() -> void:
 		var l0 := world.landmark(at)
 		player["pos"] = _free_spot_near(l0.get("spot", l0["pos"] + Vector2(0, 180)))
 		cam_focus = _to3(player["pos"])
+	# debug: --wear=plume,steel,sword,cape_red --style=3 puts gear on the hero for a screenshot
+	if _arg_value("--wear=") != "":
+		Gear.ensure()
+		for id in _arg_value("--wear=").split(","):
+			if Gear.ITEMS.has(id):
+				Gear.toggle(id)
+		if _arg_value("--hairstyle=") != "":
+			Game.hero["style"] = int(_arg_value("--hairstyle="))
+		apply_hero(false)
 	match _arg_value("--demo="):
 		"fight":
 			for kind in ["wolf", "troll", "slime"]:
@@ -1161,25 +1170,21 @@ func hero_look(draft: Dictionary = {}) -> Dictionary:
 	var cloth: Color = HudMenus.HERO_CLOTHS[int(h["cloth"]) % HudMenus.HERO_CLOTHS.size()]
 	var look := {"skin": HudMenus.HERO_SKINS[int(h["skin"]) % HudMenus.HERO_SKINS.size()], "hair": HudMenus.HERO_HAIRS[int(h["hair"]) % HudMenus.HERO_HAIRS.size()],
 		"cloth": cloth, "pants": Color(0.26, 0.24, 0.26), "weapon": "axe", "eyes": "tall", "brows": "dash", "chin": 0.22}
-	match int(h["hat"]):
-		0:
-			look["hat"] = "spiky"
-		1:
-			look["hat"] = "short"
-		2:
-			look["helm"] = "hood"
-			look["hat_col"] = cloth.darkened(0.1)
+	look["hat"] = str(Gear.HAIR[int(h.get("style", 0)) % Gear.HAIR.size()][1])
+	var eq: Variant = h.get("equip", {})
+	if eq is Dictionary:
+		look.merge(Gear.look(eq), true)
 	return look
 
 
 ## Called when the character creator finishes: new look, new stats.
-func apply_hero() -> void:
+func apply_hero(heal := true) -> void:
 	var old := player_view
 	player_view = _make_standee(_bake_person(hero_look(), Vector2i(256, 320)), 1.75 if cute else 2.3, String(Game.hero["name"]))
 	player_view.show_hp = false
 	if old != null:
 		old.queue_free()
-	career.apply_stats(self, true)
+	career.apply_stats(self, heal)
 	if net != null:
 		net.send_look()
 
@@ -1521,6 +1526,73 @@ func _spawn_dragon() -> void:
 	m.aggro = float(Monster.TYPES[kind]["aggro"])
 	hud.banner("A dragon stirs", "%s near %s" % [m.display_name, String(world.landmark(lm).get("name", lm))])
 	Economy.message.emit("A %s has been seen near %s. Only the bold (and level 5 or more) should go." % [m.display_name, String(world.landmark(lm).get("name", lm))])
+
+
+# ---------------- shared raid (needs the world server) ----------------
+
+var raid_mon: Monster
+var raid_id := 0
+var raid_dealt := 0.0
+var _raid_mark := 1.0
+
+
+## One message from the world server: start / hp / end of the raid dragon.
+func raid_update(m: Dictionary) -> void:
+	var state := str(m.get("state", ""))
+	var mx := float(m.get("max", 1.0))
+	var hp := float(m.get("hp", 0.0))
+	if state == "start":
+		if raid_mon != null and monsters.has(raid_mon):
+			return
+		var kind := str(m.get("kind", "dragon_red"))
+		if not Monster.TYPES.has(kind):
+			return
+		var lm: String = String(Monster.TYPES[kind]["regions"][0])
+		if world.landmark(lm).is_empty():
+			return
+		var c: Vector2 = world.landmark(lm)["pos"]
+		raid_mon = _add_monster(kind, _free_spot_near(c))
+		raid_mon.raid = true
+		raid_mon.aggro = 520.0
+		raid_mon.max_hp = mx
+		raid_mon.hp = hp
+		raid_id = int(m.get("id", 0))
+		raid_dealt = 0.0
+		_raid_mark = 1.0
+		var nm := String(world.landmark(lm).get("name", lm))
+		hud.banner("RAID: %s" % raid_mon.display_name, "Near %s. Everyone's hits count. %d seconds." % [nm, int(m.get("left", 0))])
+		Economy.message.emit("RAID! A %s is attacking near %s. Everyone online can fight it, and the damage adds up." % [raid_mon.display_name, nm])
+	elif state == "hp":
+		if raid_mon != null and monsters.has(raid_mon):
+			raid_mon.max_hp = mx
+			raid_mon.hp = maxf(hp, 1.0)
+			var f := hp / maxf(mx, 1.0)
+			while f < _raid_mark - 0.25 and _raid_mark > 0.3:
+				_raid_mark -= 0.25
+				Economy.message.emit("The raid dragon is down to %d%%." % int(_raid_mark * 100))
+	elif state == "end":
+		var won := bool(m.get("won", false))
+		var top: Array = m.get("top", [])
+		var lines := ""
+		for e in top:
+			lines += "%s %d  " % [str(e[0]), int(e[1])]
+		if raid_mon != null and monsters.has(raid_mon):
+			if won:
+				raid_mon.killer_id = "player" if raid_dealt > 0.0 else "raid"
+				raid_mon.raid = false
+				raid_mon.hp = 0.0
+			else:
+				monsters.erase(raid_mon)
+				if is_instance_valid(raid_mon.telegraph):
+					raid_mon.telegraph.queue_free()
+				raid_mon.view.queue_free()
+		raid_mon = null
+		if won:
+			hud.banner("RAID WON", "The dragon is down. You dealt %d." % int(raid_dealt))
+			Economy.message.emit("The raid is won. Top damage: %s" % lines)
+		else:
+			hud.banner("The dragon got away", "Not enough damage in time.")
+			Economy.message.emit("The raid dragon flew off. Top damage: %s" % lines)
 
 
 func _spawn_boss() -> void:
@@ -1945,6 +2017,13 @@ func _seg_dist(p: Vector2, a: Vector2, b: Vector2) -> float:
 
 func _damage_monster(m: Monster, dmg: float, killer: String, from: Vector2, step := 0, crit := false) -> void:
 	m.hp -= dmg
+	if m.raid:
+		# the server decides when it dies; show the hit now, let the next sync correct it
+		m.hp = maxf(m.hp, 1.0)
+		if killer == "player":
+			raid_dealt += dmg
+			if net != null:
+				net.raid_hit(dmg)
 	m.killer_id = killer
 	var away := (m.pos - from).normalized()
 	m.knock = away * m.knock_power * (1.0 + step * 0.9)
@@ -1983,6 +2062,7 @@ func hurt_player(dmg: float, from: Vector2) -> void:
 		if float(player["iframes"]) > 0.0 and not player["perfected"]:
 			_perfect_dodge()
 		return
+	dmg *= 1.0 - Gear.defence()
 	player["grace"] = 0.55
 	player["combo_hits"] = 0
 	player["combo_t"] = 0.0
@@ -2222,6 +2302,7 @@ func _process(delta: float) -> void:
 	_separate(delta)
 	_resolve_deaths()
 	_update_gathers(delta)
+	_update_coin_drops(delta)
 	_update_trees(delta)
 	_check_landmarks()
 	_wake_towns()
@@ -3571,6 +3652,77 @@ func _separate(delta: float) -> void:
 			a.pos = try_move(a.pos, dp.normalized() * (gap - dp.length()) * minf(1.0, delta * 6.0), 8.0)
 
 
+# ---------------- gold that monsters drop ----------------
+# Real coins on the ground. They are paid out of the nearest town's treasury
+# when you pick them up (a bounty), so no coin is ever made from nothing.
+
+var coin_drops: Array = []
+var _coin_mesh: CylinderMesh
+var _coin_mat: StandardMaterial3D
+var _coin_warned := 0.0
+
+
+func _drop_gold(p: Vector2, total: int) -> void:
+	if total <= 0:
+		return
+	if _coin_mesh == null:
+		_coin_mesh = CylinderMesh.new()
+		_coin_mesh.top_radius = 0.2
+		_coin_mesh.bottom_radius = 0.2
+		_coin_mesh.height = 0.05
+		_coin_mat = StandardMaterial3D.new()
+		_coin_mat.albedo_color = Color(1.0, 0.82, 0.25)
+		_coin_mat.emission_enabled = true
+		_coin_mat.emission = Color(0.6, 0.4, 0.05)
+		_coin_mesh.material = _coin_mat
+	var n := clampi(total / 4 + 1, 1, 6)
+	var per := maxi(1, total / n)
+	for i in n:
+		var node := MeshInstance3D.new()
+		node.mesh = _coin_mesh
+		node.rotation.x = PI * 0.5
+		add_child(node)
+		var q := p + Vector2(rng.randf_range(-34, 34), rng.randf_range(-34, 34))
+		node.position = Bend.at(_to3(q)) + Vector3(0, 0.3, 0)
+		coin_drops.append({"pos": q, "amt": per, "node": node, "t": 0.0, "seed": rng.randf() * TAU})
+
+
+func _update_coin_drops(delta: float) -> void:
+	var pp: Vector2 = player["pos"]
+	for c in coin_drops.duplicate():
+		c["t"] = float(c["t"]) + delta
+		var node: MeshInstance3D = c["node"]
+		var pos: Vector2 = c["pos"]
+		var d := pos.distance_to(pp)
+		if d < 130.0 and float(c["t"]) > 0.5 and not player.get("down", false):
+			pos += (pp - pos).normalized() * minf(d, (260.0 + (130.0 - d) * 4.0) * delta)
+			c["pos"] = pos
+		if is_instance_valid(node):
+			node.position = Bend.at(_to3(pos)) + Vector3(0, 0.3 + sin(float(c["t"]) * 4.0 + float(c["seed"])) * 0.06, 0)
+			node.rotation.y += delta * 4.0
+		if d < 28.0 and float(c["t"]) > 0.5:
+			_collect_coin(c)
+		elif float(c["t"]) > 60.0:
+			coin_drops.erase(c)
+			if is_instance_valid(node):
+				node.queue_free()
+
+
+func _collect_coin(c: Dictionary) -> void:
+	coin_drops.erase(c)
+	var node: MeshInstance3D = c["node"]
+	if is_instance_valid(node):
+		node.queue_free()
+	var amt := int(c["amt"])
+	var tre := _guard_post_id(str(_nearest_town_dict(c["pos"]).get("id", "sunny")))
+	if tre != "player" and Economy.pay(tre, "player", amt):
+		sfx("coin")
+		_pop_number(_to3(player["pos"]) + Vector3(0, 1.8, 0), "+%d" % amt, Color(1.0, 0.85, 0.25))
+	elif clock - _coin_warned > 20.0:
+		_coin_warned = clock
+		Economy.message.emit("The treasury could not pay the bounty on that coin.")
+
+
 func _resolve_deaths() -> void:
 	for m in monsters.duplicate():
 		if m.hp > 0.0:
@@ -3594,6 +3746,7 @@ func _resolve_deaths() -> void:
 			else:
 				hud.banner("%s slain" % m.display_name, "A dragon's hoard is yours.")
 		if m.killer_id == "player":
+			_drop_gold(m.pos, (60 if Monster.is_big(m.kind) else 2 + m.tier * 3 + int(m.max_hp / 40.0)))
 			var drops: Dictionary = Monster.TYPES[m.kind]["drops"]
 			var got: Array = []
 			for good in drops:

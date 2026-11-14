@@ -2,7 +2,7 @@
 import { spawn } from "node:child_process";
 import net from "node:net";
 import crypto from "node:crypto";
-const srv = spawn("node", ["world_server.mjs"], { env: { ...process.env, PORT: "8799", SEED: "42" }, stdio: "ignore" });
+const srv = spawn("node", ["world_server.mjs"], { env: { ...process.env, PORT: "8799", SEED: "42", RAID_EVERY: "1", RAID_FIRST: "1", RAID_HP: "100" }, stdio: "ignore" });
 await new Promise((r) => setTimeout(r, 500));
 function client(name) {
   return new Promise((res) => {
@@ -23,7 +23,12 @@ const b = await client("B"); b.s.send({ t: "hello", name: "Bob", look: {} });
 await new Promise((r) => setTimeout(r, 150));
 a.s.send({ t: "pos", x: 10, y: 20, dx: 1, dy: 0 }); a.s.send({ t: "chat", text: "hi" });
 await new Promise((r) => setTimeout(r, 300));
+await new Promise((r) => setTimeout(r, 100));
+for (let i = 0; i < 4; i++) { a.s.send({ t: "raid_hit", dmg: 999 }); await new Promise((r) => setTimeout(r, 100)); }
+await new Promise((r) => setTimeout(r, 600));
 const ok = [
+  a.msgs.some((m) => m.t === "raid" && m.state === "start" && m.max === 200),
+  a.msgs.some((m) => m.t === "raid" && m.state === "end" && m.won === true && m.top[0][0] === "Ann"),
   b.msgs.find((m) => m.t === "welcome")?.seed === 42,
   b.msgs.find((m) => m.t === "welcome")?.players[0]?.name === "Ann",
   a.msgs.some((m) => m.t === "join" && m.name === "Bob"),

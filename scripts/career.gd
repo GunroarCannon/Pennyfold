@@ -66,7 +66,7 @@ func damage_mult() -> float:
 	var m := 1.0 + _x("dmg_per_level", 0.07) * (level - 1) + 0.04 * (Game.stat("might") - 1)
 	if skills != null:
 		m += skills.bonus("dmg")
-	return m
+	return m * Gear.attack()
 
 
 ## Applies the level's stats to the player dictionary.

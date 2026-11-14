@@ -1040,6 +1040,28 @@ static func _edge(name: String, cx: float) -> PackedVector2Array:
 	return out
 
 
+## One solid spiky hairdo: the skull cap and its spikes are a single outline,
+## so there are no seams between head and spikes. back=true closes the shape
+## low behind the head instead of at the fringe.
+static func _spiky(cx: float, back: bool) -> PackedVector2Array:
+	var pts := PackedVector2Array()
+	var n := 9
+	for i in n * 2 + 1:
+		var a := lerpf(PI * 0.93, PI * 2.07, float(i) / float(n * 2))
+		var tip := i % 2 == 1 and i > 1 and i < n * 2 - 1
+		var r := 1.0
+		if tip:
+			var u := float(i) / float(n * 2)
+			r = 1.0 + (0.55 if (i % 4 == 1) else 0.42) * pow(sin(u * PI), 0.6)
+		pts.append(V(cx + cos(a) * 24.6 * r, -73.0 + sin(a) * 22.4 * r))
+	if back:
+		pts.append_array(PackedVector2Array([V(cx + 24.5, -61), V(cx + 12, -55), V(cx - 12, -55), V(cx - 24.5, -61)]))
+	else:
+		var e := _edge("spiky", cx)
+		pts.append_array(e.slice(1, e.size() - 1))
+	return pts
+
+
 ## Hair cap over the skull plus its fringe edge. bump > 0 makes it curly.
 static func _cap(cx: float, edge: String, bump: float = 0.0) -> PackedVector2Array:
 	var pts := PackedVector2Array()
@@ -1235,12 +1257,22 @@ static func _hair_front(sh: Array, dec: Array, p: Dictionary, k: Dictionary, sid
 	dk.a = 0.5
 	var bare: bool = k["gear"] == "none"
 	var open: bool = k["gear"] in ["none", "crown"]
-	if bare and style in ["spiky", "messy", "short", "curly", "sweep", "ahoge", "wavy", "long", "pony", "twin", "bun", "twinbun", "braid"]:
-		var n := 7 if style in ["spiky", "messy"] else 5
-		var ln := 15.0 if style == "spiky" else (13.0 if style == "messy" else 8.5)
-		_flicks(sh, dec, hair, cx, n, ln, true)
-	_sh(sh, _cap(cx, fringe, 0.065 if style == "curly" else 0.0), hair, piece, 1.0)
-	if open and style not in ["monk", "slick", "bowl", "bob"]:
+	var solid_spiky := bare and style == "spiky"
+	if solid_spiky:
+		_sh(sh, _spiky(cx, false), hair, piece, 1.0)
+		# a few painted tufts instead of separate cut-outs
+		var tuft := hair.darkened(0.3)
+		tuft.a = 0.5
+		for j in 5:
+			var u := float(j) / 4.0
+			_dl(dec, V(cx + lerpf(-15.0, 15.0, u), -78.0 - absf(u - 0.5) * 6.0), V(cx + lerpf(-19.0, 19.0, u), -94.0 - (1.0 - absf(u - 0.5) * 2.0) * 8.0), tuft, 1.0, piece)
+	else:
+		if bare and style in ["spiky", "messy", "short", "curly", "sweep", "ahoge", "wavy", "long", "pony", "twin", "bun", "twinbun", "braid"]:
+			var n := 7 if style in ["spiky", "messy"] else 5
+			var ln := 15.0 if style == "spiky" else (13.0 if style == "messy" else 8.5)
+			_flicks(sh, dec, hair, cx, n, ln, true)
+		_sh(sh, _cap(cx, fringe, 0.065 if style == "curly" else 0.0), hair, piece, 1.0)
+	if open and not solid_spiky and style not in ["monk", "slick", "bowl", "bob"]:
 		# swept fringe: leaf strands from the parting across the forehead
 		var nl := 5
 		for j in nl:
@@ -1274,7 +1306,15 @@ static func _hair_back(sh: Array, dec: Array, p: Dictionary, k: Dictionary) -> v
 	var ribbon: Color = p.get("ribbon", Color(0.86, 0.3, 0.36))
 	var bare: bool = k["gear"] == "none"
 	var open: bool = k["gear"] in ["none", "crown"]
-	if bare and style in ["spiky", "messy", "short", "curly", "sweep", "ahoge", "wavy", "long", "pony", "twin", "bun", "twinbun", "braid"]:
+	if bare and style == "spiky":
+		_sh(sh, _spiky(0.0, true), hair, piece, 1.0)
+		var tuft := hair.darkened(0.3)
+		tuft.a = 0.5
+		for j in 5:
+			var u := float(j) / 4.0
+			_dl(dec, V(lerpf(-15.0, 15.0, u), -78.0), V(lerpf(-19.0, 19.0, u), -94.0 - (1.0 - absf(u - 0.5) * 2.0) * 8.0), tuft, 1.0, piece)
+		return
+	if bare and style in ["messy", "short", "curly", "sweep", "ahoge", "wavy", "long", "pony", "twin", "bun", "twinbun", "braid"]:
 		var n := 7 if style in ["spiky", "messy"] else 5
 		var ln := 15.0 if style == "spiky" else (13.0 if style == "messy" else 8.5)
 		_flicks(sh, dec, hair, 0.0, n, ln, false)

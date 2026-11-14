@@ -20,7 +20,7 @@ var force_tutorial := false
 ## A creator draft kept across the scene reload that an art-style switch needs.
 var hero_draft: Dictionary = {}
 var resume_creator := false
-var hero := {"made": false, "name": "You", "skin": 0, "hair": 0, "cloth": 0, "hat": 0,
+var hero := {"made": false, "name": "You", "skin": 0, "hair": 0, "cloth": 0, "style": 0, "owned": [], "equip": {},
 	"stats": {"might": 2, "vigor": 2, "spirit": 2, "swift": 2, "luck": 2}}
 
 

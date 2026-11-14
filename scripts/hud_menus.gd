@@ -5,9 +5,9 @@ class_name HudMenus
 extends RefCounted
 
 const HERO_SKINS := [Color(0.98, 0.85, 0.72), Color(0.90, 0.70, 0.54), Color(0.74, 0.54, 0.38), Color(0.54, 0.38, 0.26), Color(0.42, 0.29, 0.20), Color(1.0, 0.90, 0.80)]
-const HERO_HAIRS := [Color(0.25, 0.16, 0.10), Color(0.10, 0.08, 0.07), Color(0.86, 0.68, 0.36), Color(0.64, 0.30, 0.14), Color(0.66, 0.66, 0.66), Color(0.55, 0.30, 0.55)]
+const HERO_HAIRS := [Color(0.25, 0.16, 0.10), Color(0.10, 0.08, 0.07), Color(0.86, 0.68, 0.36), Color(0.64, 0.30, 0.14), Color(0.66, 0.66, 0.66), Color(0.55, 0.30, 0.55),
+	Color(0.78, 0.24, 0.20), Color(0.95, 0.90, 0.78), Color(0.90, 0.55, 0.68), Color(0.30, 0.50, 0.78), Color(0.30, 0.62, 0.42), Color(0.97, 0.80, 0.30)]
 const HERO_CLOTHS := [Color(0.38, 0.40, 0.46), Color(0.70, 0.30, 0.28), Color(0.30, 0.52, 0.40), Color(0.84, 0.66, 0.25), Color(0.45, 0.35, 0.62), Color(0.28, 0.46, 0.66)]
-const HAT_NAMES := ["Spiky", "Short", "Hood", "Bare"]
 const STAT_INFO := {
 	"might": ["Might", "Hits land harder."],
 	"vigor": ["Vigor", "More health."],
@@ -361,7 +361,7 @@ func show_creator(on_done: Callable) -> void:
 	if creator != null:
 		creator.queue_free()
 	if true:
-		_draft = {"name": "", "skin": 0, "hair": 0, "cloth": 0, "hat": 0, "stats": {"might": 1, "vigor": 1, "spirit": 1, "swift": 1, "luck": 1}}
+		_draft = {"name": "", "skin": 0, "hair": 0, "cloth": 0, "style": 0, "owned": [], "equip": {}, "stats": {"might": 1, "vigor": 1, "spirit": 1, "swift": 1, "luck": 1}}
 	_rolls = int(_draft.get("_r", 3))
 	_bonus = int(_draft.get("_b", 0))
 	creator = hud._panel(Hud.PAPER_LIGHT)
@@ -439,17 +439,24 @@ func show_creator(on_done: Callable) -> void:
 	vb.add_child(_swatch_row("Skin", "skin", HERO_SKINS.size(), func(i: int) -> Color: return HERO_SKINS[i]))
 	vb.add_child(_swatch_row("Hair", "hair", HERO_HAIRS.size(), func(i: int) -> Color: return HERO_HAIRS[i]))
 	vb.add_child(_swatch_row("Outfit", "cloth", HERO_CLOTHS.size(), func(i: int) -> Color: return HERO_CLOTHS[i]))
-	var hats := HBoxContainer.new()
-	hats.add_theme_constant_override("separation", 6)
-	hats.add_child(_row_label("Hat"))
-	for i in HAT_NAMES.size():
-		var b := hud._button(HAT_NAMES[i], Hud.PAPER_LIGHT)
-		b.add_theme_font_size_override("font_size", 16)
+	# hairstyles: boys', girls' and everyone's. Hats are bought in shops instead.
+	var styles := HFlowContainer.new()
+	styles.add_theme_constant_override("h_separation", 5)
+	styles.add_theme_constant_override("v_separation", 4)
+	styles.custom_minimum_size = Vector2(500, 0)
+	var srow := HBoxContainer.new()
+	srow.add_theme_constant_override("separation", 6)
+	srow.add_child(_row_label("Style"))
+	srow.add_child(styles)
+	for i in Gear.HAIR.size():
+		var b := hud._button(str(Gear.HAIR[i][0]), Hud.PAPER_LIGHT)
+		b.add_theme_font_size_override("font_size", 14)
 		b.pressed.connect(func() -> void:
-			_draft["hat"] = i
+			_draft["style"] = i
+			Sfx.play("click")
 			_update_preview())
-		hats.add_child(b)
-	vb.add_child(hats)
+		styles.add_child(b)
+	vb.add_child(srow)
 	vb.add_child(HSeparator.new())
 	var sh := HBoxContainer.new()
 	vb.add_child(sh)
@@ -492,7 +499,11 @@ func show_creator(on_done: Callable) -> void:
 		for k in STAT_ORDER:
 			_draft["stats"][k] = int(_draft["stats"][k]) + 1
 		_draft["made"] = true
+		var keep_owned: Variant = Game.hero.get("owned", [])
+		var keep_equip: Variant = Game.hero.get("equip", {})
 		Game.hero = _draft.duplicate(true)
+		Game.hero["owned"] = keep_owned
+		Game.hero["equip"] = keep_equip
 		hud._vis(creator, false)
 		var want := "cute" if _pv_cute else "real"
 		if want != Game.style:

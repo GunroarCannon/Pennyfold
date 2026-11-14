@@ -85,7 +85,7 @@ func _name() -> String:
 ## Only plain numbers cross the wire; each client rebuilds the look from them.
 func _hero() -> Dictionary:
 	var h: Dictionary = Game.hero
-	return {"skin": int(h.get("skin", 0)), "hair": int(h.get("hair", 0)), "cloth": int(h.get("cloth", 0)), "hat": int(h.get("hat", 0))}
+	return {"skin": int(h.get("skin", 0)), "hair": int(h.get("hair", 0)), "cloth": int(h.get("cloth", 0)), "style": int(h.get("style", 0)), "equip": (h.get("equip", {}) as Dictionary).duplicate()}
 
 
 func send_look() -> void:
@@ -140,6 +140,11 @@ func _on(m: Dictionary) -> void:
 					r2["dir"] = Vector2(float(s[3]), float(s[4]))
 		"chat":
 			_on_chat(int(m["id"]), str(m.get("name", "?")), str(m.get("text", "")))
+		"raid":
+			if main != null and main.ready_done:
+				main.raid_update(m)
+			else:
+				_pending_raid = m
 
 
 func _log(text: String) -> void:
@@ -152,7 +157,19 @@ func _log(text: String) -> void:
 var _pending: Array = []
 
 
+var _pending_raid: Dictionary = {}
+
+
+## Tells the server one of the local player's hits landed on the raid dragon.
+func raid_hit(dmg: float) -> void:
+	if online:
+		_send({"t": "raid_hit", "dmg": dmg})
+
+
 func flush_pending() -> void:
+	if not _pending_raid.is_empty():
+		main.raid_update(_pending_raid)
+		_pending_raid = {}
 	var p := _pending
 	_pending = []
 	for d in p:
@@ -167,7 +184,12 @@ func _add_remote(p: Dictionary) -> void:
 		_pending.append(p)
 		return
 	var h: Dictionary = p.get("look", {})
-	var draft := {"skin": int(h.get("skin", 0)), "hair": int(h.get("hair", 0)), "cloth": int(h.get("cloth", 0)), "hat": int(h.get("hat", 0))}
+	var draft := {"skin": int(h.get("skin", 0)), "hair": int(h.get("hair", 0)), "cloth": int(h.get("cloth", 0)), "style": int(h.get("style", 0)), "equip": {}}
+	var he: Variant = h.get("equip", {})
+	if he is Dictionary:
+		for slot in he:
+			if Gear.ITEMS.has(str(he[slot])):  # only known items cross the wire
+				draft["equip"][str(slot)] = str(he[slot])
 	var nm := str(p.get("name", "Traveller"))
 	var v: Standee = main._make_standee(main._bake_person(main.hero_look(draft), Vector2i(256, 320)), 1.75 if main.cute else 2.3, nm)
 	v.show_hp = false

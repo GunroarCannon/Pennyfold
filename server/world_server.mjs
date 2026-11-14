@@ -12,10 +12,12 @@
 //   client -> server  {t:"hello", name, look}   first message
 //                     {t:"pos", x, y, dx, dy}   ~10x per second
 //                     {t:"chat", text}
+//                     {t:"raid_hit", dmg}       damage dealt to the raid dragon
 //   server -> client  {t:"welcome", id, seed, clock, players:[{id,name,look,x,y}]}
 //                     {t:"join", id, name, look, x, y} / {t:"leave", id}
 //                     {t:"state", p:[[id,x,y,dx,dy],...]}   10 Hz
 //                     {t:"chat", id, name, text}
+//                     {t:"raid", state:"start"|"hp"|"end", kind, hp, max, left, top, won}
 
 import http from "node:http";
 import crypto from "node:crypto";
@@ -92,6 +94,7 @@ function onMessage(p, raw) {
     const others = [...players.values()].filter((o) => o !== p && o.joined)
       .map((o) => ({ id: o.id, name: o.name, look: o.look, x: o.x, y: o.y }));
     send(p, { t: "welcome", id: p.id, seed: world.seed, clock: clock(), players: others });
+    if (raid) send(p, raidMsg("start"));
     broadcast({ t: "join", id: p.id, name: p.name, look: p.look, x: p.x, y: p.y }, p);
     console.log(`+ ${p.name} (#${p.id}) — ${players.size} online`);
   } else if (!p.joined) {
@@ -103,6 +106,8 @@ function onMessage(p, raw) {
       p.look = m.look; p.name = clean(m.name, 16) || p.name;
       broadcast({ t: "look", id: p.id, name: p.name, look: p.look }, p);
     }
+  } else if (m.t === "raid_hit") {
+    raidHit(p, m);
   } else if (m.t === "chat") {
     const now = Date.now();
     if (now - p.chatAt < 800) return; // rate limit
@@ -119,11 +124,60 @@ function drop(p) {
   p.sock.destroy();
 }
 
+// ---- raids: one shared dragon, every player's hits count ----
+// The server owns the health pool and the damage tally; clients only report
+// hits (clamped and rate limited here) and draw the dragon near its lair.
+const RAID_EVERY = Number(process.env.RAID_EVERY || 480);   // seconds between raids
+const RAID_LENGTH = Number(process.env.RAID_LENGTH || 240);  // seconds to bring it down
+const RAID_HP = Number(process.env.RAID_HP || 900);          // per player present at the start
+const KINDS = ["dragon_red", "dragon_blue", "dragon_green"];
+let raid = null;           // {id, kind, hp, max, ends, dmg: Map(id -> {name, dmg})}
+let raidNext = Date.now() + Number(process.env.RAID_FIRST || 90) * 1000; // first raid ~90 s after start, then every RAID_EVERY
+let raidIds = 0;
+
+const online = () => [...players.values()].filter((p) => p.joined);
+function top(r) { return [...r.dmg.values()].sort((a, b) => b.dmg - a.dmg).slice(0, 5).map((e) => [e.name, Math.round(e.dmg)]); }
+function raidMsg(state, extra = {}) {
+  return { t: "raid", state, id: raid.id, kind: raid.kind, hp: Math.round(raid.hp), max: raid.max, left: Math.max(0, Math.round((raid.ends - Date.now()) / 1000)), top: top(raid), ...extra };
+}
+function startRaid() {
+  const n = Math.max(1, online().length);
+  raid = { id: ++raidIds, kind: KINDS[Math.floor(Math.random() * KINDS.length)], hp: RAID_HP * n, max: RAID_HP * n, ends: Date.now() + RAID_LENGTH * 1000, dmg: new Map() };
+  broadcast(raidMsg("start"));
+  console.log(`! raid #${raid.id}: ${raid.kind}, ${raid.max} hp`);
+}
+function endRaid(won) {
+  broadcast(raidMsg("end", { won, hp: won ? 0 : Math.round(raid.hp) }));
+  console.log(`! raid #${raid.id} ${won ? "won" : "lost"}`);
+  raid = null;
+  raidNext = Date.now() + RAID_EVERY * 1000;
+}
+function raidHit(p, m) {
+  if (!raid) return;
+  const now = Date.now();
+  if (now - (p.hitAt || 0) < 80) return; // at most ~12 hits per second each
+  p.hitAt = now;
+  const d = Math.min(Math.max(num(m.dmg), 0), 60);
+  if (d <= 0) return;
+  raid.hp = Math.max(0, raid.hp - d);
+  const e = raid.dmg.get(p.id) || { name: p.name, dmg: 0 };
+  e.name = p.name; e.dmg += d; raid.dmg.set(p.id, e);
+  if (raid.hp <= 0) endRaid(true);
+}
+setInterval(() => {
+  const n = online().length;
+  if (raid) {
+    if (Date.now() >= raid.ends) endRaid(false);
+    else if (n === 0) { raid = null; raidNext = Date.now() + RAID_EVERY * 1000; }
+    else broadcast(raidMsg("hp"));
+  } else if (n > 0 && Date.now() >= raidNext) startRaid();
+}, 500);
+
 // ---- http + upgrade ----
 const server = http.createServer((req, res) => {
   if (req.url === "/health" || req.url === "/status") {
     res.writeHead(200, { "content-type": "application/json", "access-control-allow-origin": "*" });
-    res.end(JSON.stringify({ ok: true, seed: world.seed, online: [...players.values()].filter((p) => p.joined).length }));
+    res.end(JSON.stringify({ ok: true, seed: world.seed, online: online().length, raid: raid ? { kind: raid.kind, hp: Math.round(raid.hp), max: raid.max } : null }));
   } else { res.writeHead(404); res.end(); }
 });
 

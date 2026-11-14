@@ -76,6 +76,7 @@ const TIER_TINT := [Color(1, 1, 1), Color(1.0, 0.78, 0.55), Color(1.0, 0.38, 0.3
 
 var kind := "wolf"
 var tier := 0
+var raid := false            # the shared raid dragon: the server owns its health
 var variant_size := 1.0      # individual build: brutes are bigger and tougher, swifts smaller and quicker
 var display_name := "Wolf"
 var pos := Vector2.ZERO
