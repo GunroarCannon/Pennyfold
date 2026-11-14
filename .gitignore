@@ -10,3 +10,5 @@ server/.env
 server/state.json
 node_modules/
 build/
+launch/
+trash/

@@ -60,12 +60,12 @@ func coins() -> int:
 
 
 func update(delta: float, world) -> void:
-	hunger = minf(100.0, hunger + delta * 0.4)
+	hunger = minf(100.0, hunger + delta * 0.3)
 	eat_cd = maxf(0.0, eat_cd - delta)
 	fun_cd = maxf(0.0, fun_cd - delta)
 	atk_cd = maxf(0.0, atk_cd - delta)
 	if hunger >= 100.0:
-		hp -= delta * 0.8
+		hp -= delta * 0.35
 		if randf() < delta * 0.05:
 			say("So hungry...")
 	elif hp < max_hp:
@@ -132,6 +132,10 @@ func update(delta: float, world) -> void:
 				Economy.use_item(id, shop_good)
 				hunger = 0.0
 				say(ATE[randi() % ATE.size()])
+			elif world.food_relief(self, shop_target, shop_good) and Economy.buy(shop_target, shop_good, id):
+				Economy.use_item(id, shop_good)
+				hunger = 0.0
+				say("The town purse bought my supper.")
 			else:
 				say("I cannot afford food.")
 			eat_cd = 20.0

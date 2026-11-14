@@ -12,7 +12,7 @@
 class_name Monster
 extends RefCounted
 
-const TYPES := {
+const BASE_TYPES := {
 	"wolf": {"name": "Wolf", "cute": "Fluffox", "hp": 30.0, "speed": 112.0, "dmg": 7.0, "reach": 36.0, "windup": 0.35,
 		"cd": 1.2, "aggro": 220.0, "height": 1.35, "cute_h": 1.35, "knock": 260.0, "drops": {"hide": 1, "meat": 1},
 		"pounce": 250.0, "pounce_tier": 1},
@@ -30,7 +30,41 @@ const TYPES := {
 	"boss": {"name": "Thorn Warden", "cute": "Bramble King", "hp": 420.0, "speed": 48.0, "dmg": 22.0, "reach": 74.0, "windup": 0.9,
 		"cd": 2.2, "aggro": 340.0, "height": 4.8, "cute_h": 4.8, "knock": 25.0, "drops": {"blade": 1, "ore": 3, "gel": 3}, "ranged": 330.0},
 }
-const BEAM_COL := {"bat": Color(1.0, 0.85, 0.3), "boss": Color(0.55, 1.0, 0.5)}
+static var TYPES: Dictionary = BASE_TYPES.duplicate(true)
+static var BEAM_COL := {"bat": Color(1.0, 0.85, 0.3), "boss": Color(0.55, 1.0, 0.5)}
+static var _loaded := false
+
+
+## Adds the sprite beasts from data/bestiary.json to TYPES (once).
+static func load_bestiary() -> void:
+	if _loaded:
+		return
+	_loaded = true
+	var f := FileAccess.open("res://data/bestiary.json", FileAccess.READ)
+	if f == null:
+		return
+	var d = JSON.parse_string(f.get_as_text())
+	if typeof(d) != TYPE_DICTIONARY:
+		return
+	for k in d["beasts"]:
+		var b: Dictionary = d["beasts"][k]
+		var t: Dictionary = b.duplicate(true)
+		var hh := float(b["h"]) * (1.0 if bool(b.get("boss", false)) else 1.25)
+		t["height"] = hh
+		t["cute_h"] = hh
+		TYPES[k] = t
+		if b.has("beam"):
+			var c: Array = b["beam"]
+			BEAM_COL[k] = Color(c[0], c[1], c[2])
+
+
+## True for single big fights (the Thorn Warden and the dragons).
+static func is_big(k: String) -> bool:
+	return k == "boss" or bool(TYPES[k].get("boss", false))
+
+
+static func is_sprite(k: String) -> bool:
+	return TYPES[k].has("sprite")
 
 ## per tier: hp, speed, damage, aggro radius, size
 const TIERS := [
@@ -79,6 +113,8 @@ var pack: Array = []         # wolves hunt together
 
 
 static func rig_kind(k: String, cute: bool) -> String:
+	if is_sprite(k):
+		return "sprite"
 	if cute and k == "wolf":
 		return "fluffox"
 	if cute and k == "troll":
@@ -96,9 +132,9 @@ static func name_of(k: String, cute: bool) -> String:
 
 func setup(k: String, cute: bool, p_tier := 0) -> void:
 	kind = k
-	tier = clampi(p_tier, 0, 2) if k != "boss" else 2
+	tier = clampi(p_tier, 0, 2) if not is_big(k) else 2
 	var t: Dictionary = TYPES[k]
-	var tt: Dictionary = TIERS[tier] if k != "boss" else TIERS[0]
+	var tt: Dictionary = TIERS[tier] if not is_big(k) else TIERS[0]
 	display_name = String(tt["prefix"]) + name_of(k, cute)
 	hp = float(t["hp"]) * float(tt["hp"])
 	max_hp = hp
@@ -115,7 +151,7 @@ func setup(k: String, cute: bool, p_tier := 0) -> void:
 
 
 func size_mult() -> float:
-	return 1.0 if kind == "boss" else float(TIERS[tier]["size"])
+	return 1.0 if is_big(kind) else float(TIERS[tier]["size"])
 
 
 func update(delta: float, world) -> void:

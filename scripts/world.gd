@@ -13,8 +13,8 @@ const T0 := Vector2i(-96, -96)
 const TN := Vector2i(210, 206)
 const CHUNK := 30
 const WATER := -0.55
-const TOWN_RECT := Rect2(-1, -1, 20, 16)
-const TOWN_C := Vector2(9, 7)
+const TOWN_RECT := Rect2(-1, -1, 28, 22)
+const TOWN_C := Vector2(13, 10)
 
 ## id -> name, offset from town centre (tiles), radius (tiles), icon, good
 const LANDMARKS := [
@@ -29,9 +29,9 @@ const LANDMARKS := [
 ## Entries can be a landmark id or a Vector2 tile waypoint. The extra cities
 ## append their own links in generate() from data/economy_data.json.
 const ROUTES := [
-	[Vector2(11, -3), ["lookout"]],
-	[Vector2(-3, 9), ["wood", "mine"]],
-	[Vector2(11, 16), ["ruins"]],
+	[Vector2(13, -3), ["lookout"]],
+	[Vector2(-3, 10), ["wood", "mine"]],
+	[Vector2(14, 23), ["ruins"]],
 ]
 
 var cute := true
@@ -43,6 +43,10 @@ var solid := PackedByteArray()
 var landmarks: Array = []
 ## Extra cities: {id, name, origin (tile), rect (tiles), ground (Color), palette}
 var cities: Array = []
+## id -> TownGen layout (local tiles), for every town including Sunny
+var layouts := {}
+## [a, b] tile-space segments of every bridge deck, for walking over water
+var bridge_list: Array = []
 var routes: Array = []
 var roads: Array = []
 var gather_spots: Array = []
@@ -76,6 +80,11 @@ func generate(seed_in: int, is_cute: bool) -> void:
 		d["pos"] = d["tile"] * TILE
 		landmarks.append(d)
 	_setup_cities()
+	bridge_list.clear()
+	for c in cities:
+		for br in layouts[c["id"]]["bridges"]:
+			var o2: Vector2 = c["origin"]
+			bridge_list.append([o2 + br["pos"] - br["dir"] * 5.0, o2 + br["pos"] + br["dir"] * 5.0])
 	stride = TN.x + 1
 	var n := stride * (TN.y + 1)
 	h.resize(n)
@@ -94,8 +103,10 @@ func generate(seed_in: int, is_cute: bool) -> void:
 ## roads that join them to the main town and on to the landmarks.
 func _setup_cities() -> void:
 	cities.clear()
+	layouts.clear()
 	routes = ROUTES.duplicate(true)
 	var defs: Dictionary = Economy.data.get("cities", {})
+	layouts["sunny"] = TownGen.layout("sunny", seed_value, defs["sunny"]["kinds"])
 	for id in defs:
 		var c: Dictionary = defs[id]
 		if not c.has("offset"):
@@ -103,15 +114,19 @@ func _setup_cities() -> void:
 		var o := Vector2(float(c["offset"][0]), float(c["offset"][1]))
 		var pal: Dictionary = c.get("palette", {})
 		var g: Array = pal.get("ground", [0.80, 0.72, 0.58])
-		cities.append({"id": id, "name": c["name"], "origin": o, "rect": Rect2(o.x - 1.0, o.y - 1.0, 20.0, 16.0), "ground": Color(g[0], g[1], g[2]), "tile": o + Vector2(9, 7), "pos": (o + Vector2(9, 7)) * TILE})
-		var start := (o + Vector2(5.5, 9.5)) * TILE
-		landmarks.append({"id": id, "name": c["name"], "off": Vector2.ZERO, "r": 11.0, "icon": "house", "good": "", "city": true, "tile": o + Vector2(9, 7), "pos": (o + Vector2(9, 7)) * TILE, "spot": start})
+		var L: Dictionary = TownGen.layout(id, seed_value, c["kinds"])
+		layouts[id] = L
+		var ctr: Vector2 = o + (L["center"] as Vector2)
+		cities.append({"id": id, "name": c["name"], "origin": o, "rect": Rect2(o.x - 1.0, o.y - 1.0, float(L["size"].x) + 2.0, float(L["size"].y) + 2.0), "ground": Color(g[0], g[1], g[2]), "tile": ctr, "pos": ctr * TILE})
+		var start: Vector2 = (o + (L["start"] as Vector2)) * TILE
+		landmarks.append({"id": id, "name": c["name"], "off": Vector2.ZERO, "r": 11.0, "icon": "house", "good": "", "city": true, "tile": ctr, "pos": ctr * TILE, "spot": start})
 		var link: Dictionary = c["link"]
-		var gate := o + Vector2(float(link["gate"][0]), float(link["gate"][1]))
-		routes.append([Vector2(float(link["main"][0]), float(link["main"][1])), [gate]])
+		var gate: Vector2 = o + (L["gates"][String(link["gate"])] as Vector2)
+		var sg: Vector2 = layouts["sunny"]["gates"][String(link["main_gate"])] as Vector2
+		routes.append([sg, [gate]])
 		var on: Dictionary = c.get("onward", {})
 		if not on.is_empty():
-			var og := o + Vector2(float(on["gate"][0]), float(on["gate"][1]))
+			var og: Vector2 = o + (L["gates"][String(on["gate"])] as Vector2)
 			var seq: Array = []
 			for lid in on["to"]:
 				seq.append(String(lid))
@@ -165,6 +180,7 @@ func _base(p: Vector2) -> float:
 		y = lerpf(y, -2.2, 1.0 - smoothstep(7.0, 10.5, ld))
 	# flat plateaus for the town and the landmarks
 	y = lerpf(0.0, y, smoothstep(1.5, 9.0, town_d))
+	y = _town_terrain(p, y)
 	for l in landmarks:
 		if l["id"] == "lake" or l["id"] == "lookout" or l.get("city", false):
 			continue
@@ -174,6 +190,34 @@ func _base(p: Vector2) -> float:
 	if l_top(p, look):
 		y = maxf(y, 7.2)
 	return y
+
+
+## Rivers cut through their towns and a mountain can rise behind one.
+func _town_terrain(p: Vector2, y: float) -> float:
+	for c in cities:
+		var L: Dictionary = layouts[c["id"]]
+		var o: Vector2 = c["origin"]
+		if L["mountain"] != "":
+			var peak := o + Vector2(13.0, -10.0)
+			y += 24.0 * _bump(p, peak, 8.5) * smoothstep(-2.0, 4.0, o.y - p.y + 4.0)
+		var rv: Array = L["river"]
+		if rv.is_empty():
+			continue
+		var lp := p - o
+		var best := 99.0
+		for i in rv.size() - 1:
+			best = minf(best, _seg_d(lp, rv[i], rv[i + 1]))
+		var rw: float = float(L["river_w"])
+		if best < rw * 0.5 + 2.5:
+			var t := 1.0 - smoothstep(rw * 0.28, rw * 0.5 + 1.4, best)
+			y = lerpf(y, -1.4, t)
+	return y
+
+
+func _seg_d(p: Vector2, a: Vector2, b: Vector2) -> float:
+	var ab := b - a
+	var t := clampf((p - a).dot(ab) / maxf(ab.length_squared(), 0.0001), 0.0, 1.0)
+	return p.distance_to(a + ab * t)
 
 
 func l_top(p: Vector2, look: Vector2) -> bool:
@@ -204,6 +248,9 @@ func _idx(i: int, j: int) -> int:
 
 ## Height in world units at a pixel position (bilinear between corners).
 func height_at(px: Vector2) -> float:
+	var bh := _bridge_h(px)
+	if bh > -90.0:
+		return bh
 	var tx := px.x / TILE - T0.x
 	var ty := px.y / TILE - T0.y
 	var i := floori(tx)
@@ -332,13 +379,42 @@ func _paint_colors() -> void:
 				var patch := (int(floor((p.x - farm.x) / 4.0)) + int(floor((p.y - farm.y) / 3.0))) % 2 == 0
 				var crop := Color(0.95, 0.82, 0.40) if patch else Color(0.62, 0.80, 0.36)
 				col = col.lerp(crop, 1.0 - smoothstep(8.0, 11.0, fd))
-			if _rect_dist(p, TOWN_RECT) < 1.0:
-				col = town
+			col = col.lerp(town, _town_mask(p, TOWN_RECT))
 			for c in cities:
-				if _rect_dist(p, c["rect"]) < 1.0:
-					col = c["ground"]
+				col = col.lerp(c["ground"], _town_mask(p, c["rect"]))
 			col = col.lerp(dirt, road[idx])
 			colors[idx] = col
+
+
+## Deck height when px is on a bridge, else a big negative number.
+func _bridge_h(px: Vector2) -> float:
+	if bridge_list.is_empty():
+		return -99.0
+	var p := px / TILE
+	for br in bridge_list:
+		if _seg_d(p, br[0], br[1]) < 0.55:
+			return 0.18
+	return -99.0
+
+
+func _on_bridge(p: Vector2) -> bool:
+	for c in cities:
+		var L: Dictionary = layouts[c["id"]]
+		for br in L["bridges"]:
+			var lp: Vector2 = p - c["origin"]
+			if _seg_d(lp, br["pos"] - br["dir"] * 5.0, br["pos"] + br["dir"] * 5.0) < 1.15:
+				return true
+	return false
+
+
+## A soft, wobbly oval round a town instead of a square patch of ground.
+func _town_mask(p: Vector2, r: Rect2) -> float:
+	var c := r.get_center()
+	var hx := r.size.x * 0.58
+	var hy := r.size.y * 0.58
+	var d := sqrt(pow((p.x - c.x) / hx, 2.0) + pow((p.y - c.y) / hy, 2.0))
+	d += (detail.get_noise_2d(p.x * 1.7, p.y * 1.7) * 0.5) * 0.35
+	return 1.0 - smoothstep(0.72, 1.0, d)
 
 
 func _mark_solid() -> void:
@@ -353,7 +429,7 @@ func _mark_solid() -> void:
 			var lo := minf(minf(a, b), minf(c, d))
 			var hi := maxf(maxf(a, b), maxf(c, d))
 			var on_road := maxf(maxf(road[j * stride + i], road[(j + 1) * stride + i + 1]), 0.0) > 0.35
-			if on_road:
+			if on_road or _on_bridge(Vector2(T0.x + i + 0.5, T0.y + j + 0.5)):
 				continue
 			if lo < WATER + 0.1 or hi - lo > 1.7 or (a + b + c + d) * 0.25 > 12.0:
 				solid[j * TN.x + i] = 1
@@ -480,6 +556,46 @@ func _build_water(parent: Node3D, grain: Texture2D) -> void:
 	mi.material_override = m
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	parent.add_child(mi)
+	for c in cities:
+		var L: Dictionary = layouts[c["id"]]
+		var rv: Array = L["river"]
+		if rv.size() < 2:
+			continue
+		var o: Vector2 = c["origin"]
+		var hw: float = float(L["river_w"]) * 0.5 + 1.0
+		var verts := PackedVector3Array()
+		var uvs := PackedVector2Array()
+		var idxs := PackedInt32Array()
+		var samples: Array = []
+		for i in rv.size() - 1:
+			for k in 8:
+				samples.append((rv[i] as Vector2).lerp(rv[i + 1], float(k) / 8.0))
+		samples.append(rv[rv.size() - 1])
+		for i in samples.size():
+			var a: Vector2 = samples[maxi(0, i - 1)]
+			var b: Vector2 = samples[mini(samples.size() - 1, i + 1)]
+			var d := (b - a).normalized()
+			var n := Vector2(-d.y, d.x)
+			var pt: Vector2 = (o + samples[i]) * 1.5
+			verts.append(Vector3(pt.x - n.x * hw * 1.5, WATER, pt.y - n.y * hw * 1.5))
+			verts.append(Vector3(pt.x + n.x * hw * 1.5, WATER, pt.y + n.y * hw * 1.5))
+			uvs.append(Vector2(0, float(i)))
+			uvs.append(Vector2(1, float(i)))
+			if i > 0:
+				var q := (i - 1) * 2
+				idxs.append_array(PackedInt32Array([q, q + 2, q + 1, q + 1, q + 2, q + 3]))
+		var arr := []
+		arr.resize(Mesh.ARRAY_MAX)
+		arr[Mesh.ARRAY_VERTEX] = verts
+		arr[Mesh.ARRAY_TEX_UV] = uvs
+		arr[Mesh.ARRAY_INDEX] = idxs
+		var am := ArrayMesh.new()
+		am.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr)
+		var rmi := MeshInstance3D.new()
+		rmi.mesh = am
+		rmi.material_override = m
+		rmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		parent.add_child(rmi)
 
 
 ## Picks a prop for a tile, or "" for nothing. Returns [atlas index, scale].

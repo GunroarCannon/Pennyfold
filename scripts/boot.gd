@@ -40,6 +40,9 @@ func _ready() -> void:
 	_card.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_card.mouse_filter = Control.MOUSE_FILTER_STOP
 	_card.draw.connect(_draw_card)
+	var tm := ShaderMaterial.new()
+	tm.shader = preload("res://shaders/torn_card.gdshader")
+	_card.material = tm
 	add_child(_card)
 	_card.visible = false
 	_kraft = load("res://assets/splash/kraft.png")
@@ -82,14 +85,19 @@ func _process(delta: float) -> void:
 	_t += delta
 	_shown = lerpf(_shown, _target, 1.0 - exp(-delta * 7.0))
 	if _closing and _shown > 0.985:
-		_fade += delta / 0.45
+		_fade += delta / 0.7
 		_card.modulate.a = clampf(1.0 - _fade, 0.0, 1.0)
-		_card.position = Vector2(0.0, -_fade * _fade * 90.0)
+		_card.position = Vector2(0.0, -_fade * _fade * _card.size.y * 1.05)
+		_card.pivot_offset = Vector2(_card.size.x * 0.5, _card.size.y)
+		_card.rotation = -_fade * _fade * 0.05
+		_card.modulate.a = 1.0 if _fade < 0.85 else clampf((1.0 - _fade) / 0.15, 0.0, 1.0)
 		if _fade >= 1.0:
 			active = false
 			_card.visible = false
 			_card.position = Vector2.ZERO
+			_card.rotation = 0.0
 			_closing = false
+	(_card.material as ShaderMaterial).set_shader_parameter("size", _card.size)
 	_card.queue_redraw()
 
 

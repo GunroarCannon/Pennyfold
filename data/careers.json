@@ -1,0 +1,27 @@
+{
+	"_readme": "Levels, XP and jobs. xp: needed(level) = base * growth^(level-1). kills: XP per monster kind, times (1 + tier*0.6). jobs are keyed by building kind: wage is paid each evening from the employer's real wallet; the player must stand near the workplace for need% of the shift hours; min_level/quests/kills are the requirements shown in the dialog.",
+
+	"xp": {"base": 40, "growth": 1.38, "max_level": 25, "hp_per_level": 12, "stamina_per_level": 6, "ink_per_level": 4, "dmg_per_level": 0.07,
+		"quest": 0.8, "trade_profit": 0.5, "shift": 6, "boss": 150},
+	"kills": {"slime": 6, "wolf": 9, "shroom": 8, "bat": 8, "troll": 22, "boss": 150},
+
+	"fire": {"missed_limit": 2, "assault_limit": 2, "grudge_days": 2, "raise_every": 3, "raise": 2, "max_rank": 5},
+
+	"jobs": {
+		"bakery":   {"role": "Baker",          "wage": 14, "min_level": 1, "quests": 0, "kills": 0, "shift": [8, 15], "need": 0.5, "text": "Knead, bake, smile. Dawn starts early."},
+		"market":   {"role": "Merchant clerk", "wage": 16, "min_level": 2, "quests": 1, "kills": 0, "shift": [9, 16], "need": 0.5, "text": "Stack shelves, count change. You need a trusted hand (one quest done)."},
+		"tavern":   {"role": "Barkeep",        "wage": 13, "min_level": 1, "quests": 0, "kills": 0, "shift": [10, 16], "need": 0.5, "text": "Pour ale, ignore the singing."},
+		"smithy":   {"role": "Smith's hand",   "wage": 20, "min_level": 4, "quests": 2, "kills": 0, "shift": [8, 15], "need": 0.5, "text": "Heavy work. The smith wants two finished quests and some muscle."},
+		"lodge":    {"role": "Hunter",         "wage": 17, "min_level": 3, "quests": 0, "kills": 5, "shift": [8, 15], "need": 0.5, "text": "Bring in meat and hides. Five beasts down proves you can."},
+		"guard":    {"role": "City guard",     "wage": 18, "min_level": 3, "quests": 0, "kills": 8, "shift": [8, 16], "need": 0.55, "text": "Hold the post and fight what comes in. Eight kills and a steady sword. Bounty on every beast.", "bounty": 15},
+		"dock":     {"role": "Sailor",         "wage": 14, "min_level": 1, "quests": 0, "kills": 0, "shift": [7, 14], "need": 0.5, "text": "Haul nets and mind the tide."},
+		"saltworks":{"role": "Salter",         "wage": 15, "min_level": 2, "quests": 0, "kills": 0, "shift": [8, 15], "need": 0.5, "text": "Rake brine pans. Salty in every sense."},
+		"lighthouse":{"role": "Lamp keeper",   "wage": 12, "min_level": 2, "quests": 0, "kills": 0, "shift": [9, 16], "need": 0.5, "text": "Trim the lamp, watch the sea."},
+		"foundry":  {"role": "Miner and founder","wage": 21, "min_level": 5, "quests": 1, "kills": 3, "shift": [8, 15], "need": 0.5, "text": "Ore, heat and noise. Needs a hard head."},
+		"lapidary": {"role": "Gem cutter",     "wage": 24, "min_level": 6, "quests": 2, "kills": 0, "shift": [9, 16], "need": 0.5, "text": "Steady hands only."},
+		"temple":   {"role": "Shrine helper",  "wage": 12, "min_level": 2, "quests": 0, "kills": 0, "shift": [8, 14], "need": 0.5, "text": "Sweep, light, listen."},
+		"weaver":   {"role": "Weaver",         "wage": 16, "min_level": 2, "quests": 0, "kills": 0, "shift": [9, 16], "need": 0.5, "text": "Thread and patience."},
+		"caravanserai":{"role": "Stable hand", "wage": 15, "min_level": 3, "quests": 1, "kills": 0, "shift": [8, 15], "need": 0.5, "text": "Water camels, count coins."},
+		"exchange": {"role": "Clerk of the board","wage": 26, "min_level": 7, "quests": 3, "kills": 0, "shift": [9, 16], "need": 0.5, "text": "Chalk the prices. Three quests proves you are trusted with numbers."}
+	}
+}

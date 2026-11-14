@@ -12,6 +12,9 @@ uniform vec4 rects[12];      // centre x, centre z, half width, half depth (metr
 uniform int rect_n = 0;
 uniform vec4 discs[4];       // centre x, centre z, radius, unused
 uniform int disc_n = 0;
+uniform vec4 segs[64];       // capsule roads: ax, az, bx, bz (metres)
+uniform float segw[64];      // their half widths (metres)
+uniform int seg_n = 0;
 uniform int mode = 0;        // 0 cobble, 1 asphalt, 2 sand, 3 boards, 4 snow
 uniform float fillet = 0.5;
 uniform sampler2D tex : source_color, hint_default_white, filter_linear_mipmap, repeat_enable;
@@ -44,6 +47,14 @@ void fragment() {
 			float across = h.x > h.y ? q.y : q.x;
 			lane = max(lane, step(abs(across), 0.035) * step(fract(along / 1.0), 0.55));
 		}
+	}
+	for (int i = 0; i < 64; i++) {
+		if (i >= seg_n) break;
+		vec2 a = segs[i].xy;
+		vec2 ab = segs[i].zw - a;
+		float t = clamp(dot(p - a, ab) / max(dot(ab, ab), 0.0001), 0.0, 1.0);
+		float sd = length(p - (a + ab * t)) - segw[i];
+		d = (d > 500.0) ? sd : fx_smin(d, sd, fillet);
 	}
 	for (int i = 0; i < 4; i++) {
 		if (i >= disc_n) break;

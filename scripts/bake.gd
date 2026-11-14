@@ -83,15 +83,23 @@ static func _pump() -> void:
 				if img.get_format() != Image.FORMAT_RGBA8:
 					img.convert(Image.FORMAT_RGBA8)
 				img.fix_alpha_edges()
-				img.generate_mipmaps()
+				# low-end bakes are already drawn small: mipmaps would add a third more memory
+				if not Game.low_end:
+					img.generate_mipmaps()
 				(job["out"] as ImageTexture).set_image(img)
+				# low-end bakes are drawn smaller; the texture still reports its full size
+				(job["out"] as ImageTexture).set_size_override(job["size"])
 			vp.queue_free()
 	_pumping = false
 
 
 static func _viewport(job: Dictionary) -> SubViewport:
 	var vp := SubViewport.new()
-	vp.size = job["size"]
+	var k := _scale(job)
+	vp.size = Vector2i(maxi(1, int(job["size"].x * k)), maxi(1, int(job["size"].y * k)))
+	if k < 1.0:
+		vp.size_2d_override = job["size"]
+		vp.size_2d_override_stretch = true
 	vp.transparent_bg = true
 	vp.disable_3d = true
 	vp.render_target_update_mode = SubViewport.UPDATE_ONCE
@@ -104,6 +112,14 @@ static func _viewport(job: Dictionary) -> SubViewport:
 		cut.position = Vector2(c[3], 0.0)
 		vp.add_child(cut)
 	return vp
+
+
+## Web and mobile draw bakes smaller (big rig atlases smaller still): the
+## texture reports the full size, so callers and UVs do not change.
+static func _scale(job: Dictionary) -> float:
+	if not Game.low_end:
+		return 1.0
+	return 0.5 if _area(job) > 1_200_000 else 0.65
 
 
 static func _area(job: Dictionary) -> int:

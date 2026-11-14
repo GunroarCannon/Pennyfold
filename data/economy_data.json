@@ -1,137 +1,855 @@
 {
-	"_readme": "Everything the economy does lives here. Edit and restart; no code changes needed. goods: base price + target stock (price rises when stock < target). buildings: what each building makes/buys/starts with ('buys': '*' means it takes any good). cities: where, which 9 buildings (3x3 blocks), palette, tone. merchants: the travelling traders. events: random happenings that move prices or supply. Prices: ask = base * scarcity * ask_margin, bid = base * scarcity * bid_margin; scarcity = ((target+1)/(stock+1))^elasticity clamped to [min,max], then multiplied by any active event for that good and city.",
-
-	"price": {"elasticity": 0.8, "min": 0.35, "max": 3.0, "ask_margin": 1.25, "bid_margin": 0.8, "stock_cap": 12},
-
-	"goods": {
-		"bread": {"name": "Bread", "base": 4, "target": 8},
-		"ale": {"name": "Ale", "base": 5, "target": 6},
-		"meat": {"name": "Raw meat", "base": 6, "target": 4},
-		"hide": {"name": "Wolf hide", "base": 9, "target": 4},
-		"ore": {"name": "Iron ore", "base": 8, "target": 4},
-		"blade": {"name": "Blade", "base": 28, "target": 2},
-		"gel": {"name": "Gel", "base": 5, "target": 5},
-		"herb": {"name": "Herb", "base": 4, "target": 6},
-		"wheat": {"name": "Wheat", "base": 3, "target": 8},
-		"wood": {"name": "Wood", "base": 4, "target": 6},
-		"fish": {"name": "Fish", "base": 5, "target": 7},
-		"salt": {"name": "Sea salt", "base": 6, "target": 5},
-		"ingot": {"name": "Iron ingot", "base": 14, "target": 3},
-		"gem": {"name": "Cut gem", "base": 32, "target": 2},
-		"cloth": {"name": "Cloth", "base": 10, "target": 4},
-		"spice": {"name": "Spice", "base": 18, "target": 3}
-	},
-
-	"buildings": {
-		"bakery": {"name": "Bakery", "job": "Baker", "recipe": {"in": {}, "out": {"bread": 3}}, "buys": ["wheat"], "stock": {"bread": 6}, "coins": 200},
-		"market": {"name": "General Store", "job": "Merchant", "recipe": {}, "buys": "*", "stock": {"bread": 4, "ale": 4, "meat": 2, "ore": 3, "blade": 1}, "coins": 320},
-		"tavern": {"name": "Tavern", "job": "Barkeep", "recipe": {"in": {"bread": 1}, "out": {"ale": 2}}, "buys": ["bread", "fish"], "stock": {"ale": 4}, "coins": 160},
-		"smithy": {"name": "Smithy", "job": "Smith", "recipe": {"in": {"ore": 2}, "out": {"blade": 1}}, "buys": ["ore", "ingot"], "stock": {"ore": 2, "blade": 1}, "coins": 220},
-		"lodge": {"name": "Hunter Lodge", "job": "Hunter", "recipe": {"in": {}, "out": {"meat": 2}}, "buys": ["meat", "hide"], "stock": {"meat": 1}, "coins": 180},
-		"guard": {"name": "Guard Post", "job": "Guard", "recipe": {}, "buys": [], "stock": {}, "coins": 120},
-		"house": {"name": "House", "job": "", "recipe": {}, "buys": [], "stock": {}, "coins": 0},
-
-		"dock": {"name": "Fish Dock", "job": "Fisher", "recipe": {"in": {}, "out": {"fish": 3}}, "buys": ["salt", "wood"], "stock": {"fish": 8}, "coins": 190},
-		"saltworks": {"name": "Saltworks", "job": "Salter", "recipe": {"src": {"wood": 1}, "in": {"wood": 1}, "out": {"salt": 2}}, "buys": ["wood"], "stock": {"salt": 4, "wood": 2}, "coins": 170},
-		"lighthouse": {"name": "Lighthouse", "job": "Keeper", "recipe": {}, "buys": [], "stock": {}, "coins": 40},
-		"foundry": {"name": "Foundry", "job": "Founder", "recipe": {"src": {"ore": 2}, "in": {"ore": 2}, "out": {"ingot": 1}}, "buys": ["ore", "wood"], "stock": {"ore": 4, "ingot": 2}, "coins": 260},
-		"lapidary": {"name": "Gem Cutter", "job": "Cutter", "recipe": {"in": {"ore": 2, "ingot": 1}, "out": {"gem": 1}}, "buys": ["ore", "ingot"], "stock": {"gem": 1}, "coins": 240},
-		"temple": {"name": "Mine Shrine", "job": "Priest", "recipe": {}, "buys": [], "stock": {}, "coins": 60},
-		"weaver": {"name": "Weaver", "job": "Weaver", "recipe": {"src": {"herb": 1}, "in": {"herb": 2}, "out": {"cloth": 1}}, "buys": ["herb", "wheat"], "stock": {"cloth": 2}, "coins": 210},
-		"caravanserai": {"name": "Caravanserai", "job": "Host", "recipe": {"in": {}, "out": {"spice": 1}}, "buys": "*", "stock": {"spice": 3, "cloth": 1}, "coins": 420},
-		"exchange": {"name": "Price Exchange", "job": "Broker", "recipe": {}, "buys": "*", "stock": {}, "coins": 500}
-	},
-
-	"cities": {
-		"sunny": {
-			"name": "Sunny Town", "kinds": ["bakery", "market", "tavern", "smithy", "lodge", "guard", "house", "house", "house"],
-			"palette": {}, "population": 5,
-			"tone": "cheery",
-			"likes": "bread and gossip",
-			"exports": ["bread", "meat", "blade"], "imports": ["fish", "ingot", "cloth", "spice", "salt"]
-		},
-		"copperhead": {
-			"name": "Copperhead", "offset": [-27, -24], "link": {"main": [5, -3], "gate": [20, 4]}, "onward": {"gate": [-3, 9], "to": ["mine"]},
-			"kinds": ["foundry", "smithy", "tavern", "market", "lapidary", "guard", "temple", "house", "house"],
-			"palette": {"walls": [[0.80, 0.76, 0.70], [0.72, 0.68, 0.64], [0.86, 0.80, 0.68]], "roofs": [[0.33, 0.30, 0.34], [0.45, 0.30, 0.26], [0.30, 0.34, 0.42]], "ground": [0.72, 0.68, 0.62]},
-			"population": 4, "tone": "gruff",
-			"likes": "iron, gems and being left alone",
-			"exports": ["ingot", "gem", "ore", "blade"], "imports": ["bread", "ale", "wood", "cloth", "fish"]
-		},
-		"saltmere": {
-			"name": "Saltmere", "offset": [-5, 32], "link": {"main": [5, 16], "gate": [5, -3]}, "onward": {"gate": [-3, 9], "to": ["lake"]},
-			"kinds": ["dock", "saltworks", "tavern", "market", "lighthouse", "guard", "bakery", "house", "house"],
-			"palette": {"walls": [[0.84, 0.92, 0.96], [0.92, 0.90, 0.82], [0.78, 0.88, 0.90]], "roofs": [[0.22, 0.48, 0.62], [0.30, 0.56, 0.58], [0.62, 0.34, 0.30]], "ground": [0.82, 0.78, 0.64]},
-			"population": 4, "tone": "salty",
-			"likes": "fish, salt and tall tales",
-			"exports": ["fish", "salt"], "imports": ["wood", "bread", "ore", "cloth", "spice"]
-		},
-		"highmarket": {
-			"name": "Highmarket", "offset": [28, -3], "link": {"main": [20, 4], "gate": [-3, 4]}, "onward": {"gate": [20, 4], "to": ["farm", "ruins"]},
-			"kinds": ["caravanserai", "exchange", "weaver", "market", "bakery", "tavern", "guard", "house", "house"],
-			"palette": {"walls": [[0.98, 0.84, 0.62], [0.96, 0.72, 0.58], [0.90, 0.90, 0.70]], "roofs": [[0.78, 0.30, 0.26], [0.84, 0.54, 0.22], [0.52, 0.30, 0.56]], "ground": [0.86, 0.76, 0.56]},
-			"population": 4, "tone": "slick",
-			"likes": "a bargain, a rumour and a bit of everything",
-			"exports": ["cloth", "spice"], "imports": ["ingot", "gem", "fish", "ale", "wheat"]
-		}
-	},
-
-	"merchants": {
-		"count": 5, "coins": 70, "speed": 62, "carry": 6, "hp": 70,
-		"min_profit": 3, "rest_secs": 14,
-		"archetypes": ["merchant", "peddler", "nomad_merchant"],
-		"names": ["Barnaby Haggle", "Pennyworth", "Madam Sack", "Old Tolliver", "Dunstan Cartwheel", "Mags Longroad", "Fennick the Fair", "Quill", "Hester Tally"],
-		"arrive": ["Fresh from %s! Mind the mud, it is mostly %s.", "Straight from %s with a cart of %s and a bad knee.", "%s was lovely. I brought %s. Everything else was moist."],
-		"leave": ["Off to %s. Wish me luck. And a dry cart.", "%s calls! Mostly about money.", "Heading to %s. If I am not back, I am rich."]
-	},
-
-	"events": [
-		{"id": "festival", "name": "Harvest Fair", "where": "any", "days": 2, "weight": 1.0, "goods": {"ale": 1.6, "bread": 1.4},
-			"text": "A fair is on in %s! Ale and bread are going like hot cakes.", "npc": "Everyone is drunk on the fair. Even the cat."},
-		{"id": "blight", "name": "Wheat Blight", "where": "any", "days": 3, "weight": 0.8, "goods": {"wheat": 2.0, "bread": 1.35},
-			"text": "Blight in the fields near %s. Wheat is scarce and bread follows.", "npc": "The wheat went all grey. Like my uncle."},
-		{"id": "fish_run", "name": "Great Fish Run", "where": "saltmere", "days": 2, "weight": 0.9, "goods": {"fish": 0.55},
-			"supply": {"dock": {"fish": 6}}, "text": "The fish are running at %s! Nets are bursting.", "npc": "So many fish. I have started naming them."},
-		{"id": "collapse", "name": "Tunnel Collapse", "where": "copperhead", "days": 3, "weight": 0.8, "goods": {"ore": 1.9, "ingot": 1.5},
-			"text": "A tunnel collapsed near %s. Ore will be dear for a while.", "npc": "The mine fell in. Gave it a stern talking-to."},
-		{"id": "caravan", "name": "Far Caravan", "where": "highmarket", "days": 1, "weight": 0.9, "goods": {"spice": 0.7},
-			"supply": {"caravanserai": {"spice": 5, "cloth": 2}}, "text": "A caravan from beyond the hills reached %s with spice and silk.", "npc": "Smells like cinnamon and bad decisions."},
-		{"id": "raiders", "name": "Road Raiders", "where": "any", "days": 2, "weight": 0.7, "goods": {"blade": 1.5},
-			"danger": 3, "text": "Raiders (wolves, mostly) are prowling the roads near %s. Merchants are nervous.", "npc": "Wolves on the road! Wolves! Not the good kind."}
-	],
-
-	"reasons": {
-		"scarce": ["%s is scarce in %s: %s", "Hardly any %s left in %s. %s"],
-		"glut": ["%s is cheap in %s because the shelves are full. %s", "Everyone has too much %s in %s. %s"],
-		"event": "%s",
-		"why_scarce": ["only %d on the shelves", "just %d left", "the shelves are nearly bare (%d)"],
-		"why_glut": ["%d piled up", "%d sitting around", "%d gathering dust"],
-		"travel": "A merchant named %s is hauling %s from %s to %s. That should even things out.",
-		"nothing": "Prices are steady. Boring, but honest."
-	},
-
-	"city_lines": {
-		"cheery": {
-			"greet": ["Lovely day for a bit of trade!", "Welcome to Sunny Town. We have bread and opinions.", "Mind the pigeons. They are unionised."],
-			"scarce": "Gosh, ran out of %s. Terribly sorry about that.", "glut": "Too much %s. Take some. Please.",
-			"joke": ["I tried to sell a cloud once. Went for a song.", "My bread is so good the ducks complain about the ones in the pond.", "Why did the coin cross the road? To get to the other tide.", "I am not saying the guard is lazy, but his shadow does his patrols."]
-		},
-		"gruff": {
-			"greet": ["Hm.", "State your business or buy something.", "Mind the dust. It is mostly ore. And regret."],
-			"scarce": "No %s. Don't ask twice.", "glut": "Drowning in %s. Take it, it's yours.",
-			"joke": ["Dug a hole to find happiness. Found a worse hole.", "A gem is just a rock with ambition.", "Miners do not get lost. We get 'rerouted'.", "Last foreman fell down a shaft. Had a lovely echo."]
-		},
-		"salty": {
-			"greet": ["Ahoy! Mind the gulls, they steal sandwiches.", "Welcome to Saltmere, where the fish are fresh and the stories are fresher.", "Smells like fish? That is the money."],
-			"scarce": "The %s ran dry. Blame the tide.", "glut": "More %s than a net can hold! Buy some, I beg you.",
-			"joke": ["I caught a fish so big it caught me back.", "Why is the sea salty? It never learned to stop crying about the shore.", "I named my boat 'Nauti Buoy'. The harbourmaster was not amused.", "Fish are just wet birds, change my mind."]
-		},
-		"slick": {
-			"greet": ["A customer! Do come in, do come in.", "Highmarket: if we do not have it, you did not need it.", "Psst. Spice? Silk? A rumour? All on sale."],
-			"scarce": "%s is rare, which makes it a bargain at any price.", "glut": "%s? Practically free. I am practically weeping.",
-			"joke": ["A bargain is just a loss with good PR.", "I once sold a map to a man who was standing on the thing it showed.", "Everything has a price. Mine is just fashionably high.", "Sold a haunted bucket yesterday. It came back. Sold it again."]
-		}
-	},
-
-	"npc_jokes": ["I would tell you a joke about paper, but it is tearable.", "Cardboard is the best material. You can always box your feelings.", "My boss said I should think outside the box. I am a cutout. That is all I can do.", "I get flat jokes. They have no depth.", "Do not lean on me. I fold under pressure.", "I tried to pay with a coin. Got a receipt written on a coin.", "The guard says the wolves are 'basically puppies'. He has no left arm.", "I asked the baker for a loaf. He said 'dough not'. I do not get it either.", "Slimes are very supportive. They always stick by you.", "I stood up straight today. Nobody noticed. I am very thin."]
+ "_readme": "Everything the economy does lives here. Edit and restart; no code changes needed. goods: base price + target stock (price rises when stock < target). buildings: what each building makes/buys/starts with ('buys': '*' means it takes any good). cities: where, which 9 buildings (3x3 blocks), palette, tone. merchants: the travelling traders. events: random happenings that move prices or supply. Prices: ask = base * scarcity * ask_margin, bid = base * scarcity * bid_margin; scarcity = ((target+1)/(stock+1))^elasticity clamped to [min,max], then multiplied by any active event for that good and city.",
+ "price": {
+  "elasticity": 0.8,
+  "min": 0.35,
+  "max": 3.0,
+  "ask_margin": 1.25,
+  "bid_margin": 0.8,
+  "stock_cap": 12
+ },
+ "goods": {
+  "bread": {
+   "name": "Bread",
+   "base": 4,
+   "target": 8
+  },
+  "ale": {
+   "name": "Ale",
+   "base": 5,
+   "target": 6
+  },
+  "meat": {
+   "name": "Raw meat",
+   "base": 6,
+   "target": 4
+  },
+  "hide": {
+   "name": "Wolf hide",
+   "base": 9,
+   "target": 4
+  },
+  "ore": {
+   "name": "Iron ore",
+   "base": 8,
+   "target": 4
+  },
+  "blade": {
+   "name": "Blade",
+   "base": 28,
+   "target": 2
+  },
+  "gel": {
+   "name": "Gel",
+   "base": 5,
+   "target": 5
+  },
+  "herb": {
+   "name": "Herb",
+   "base": 4,
+   "target": 6
+  },
+  "wheat": {
+   "name": "Wheat",
+   "base": 3,
+   "target": 8
+  },
+  "wood": {
+   "name": "Wood",
+   "base": 4,
+   "target": 6
+  },
+  "fish": {
+   "name": "Fish",
+   "base": 5,
+   "target": 7
+  },
+  "salt": {
+   "name": "Sea salt",
+   "base": 6,
+   "target": 5
+  },
+  "ingot": {
+   "name": "Iron ingot",
+   "base": 14,
+   "target": 3
+  },
+  "gem": {
+   "name": "Cut gem",
+   "base": 32,
+   "target": 2
+  },
+  "cloth": {
+   "name": "Cloth",
+   "base": 10,
+   "target": 4
+  },
+  "spice": {
+   "name": "Spice",
+   "base": 18,
+   "target": 3
+  }
+ },
+ "buildings": {
+  "bakery": {
+   "name": "Bakery",
+   "job": "Baker",
+   "recipe": {
+    "in": {},
+    "out": {
+     "bread": 3
+    }
+   },
+   "buys": [
+    "wheat"
+   ],
+   "stock": {
+    "bread": 6
+   },
+   "coins": 200
+  },
+  "market": {
+   "name": "General Store",
+   "job": "Merchant",
+   "recipe": {},
+   "buys": "*",
+   "stock": {
+    "bread": 4,
+    "ale": 4,
+    "meat": 2,
+    "ore": 3,
+    "blade": 1
+   },
+   "coins": 320
+  },
+  "tavern": {
+   "name": "Tavern",
+   "job": "Barkeep",
+   "recipe": {
+    "in": {
+     "bread": 1
+    },
+    "out": {
+     "ale": 2
+    }
+   },
+   "buys": [
+    "bread",
+    "fish"
+   ],
+   "stock": {
+    "ale": 4
+   },
+   "coins": 160
+  },
+  "smithy": {
+   "name": "Smithy",
+   "job": "Smith",
+   "recipe": {
+    "in": {
+     "ore": 2
+    },
+    "out": {
+     "blade": 1
+    }
+   },
+   "buys": [
+    "ore",
+    "ingot"
+   ],
+   "stock": {
+    "ore": 2,
+    "blade": 1
+   },
+   "coins": 220
+  },
+  "lodge": {
+   "name": "Hunter Lodge",
+   "job": "Hunter",
+   "recipe": {
+    "in": {},
+    "out": {
+     "meat": 2
+    }
+   },
+   "buys": [
+    "meat",
+    "hide"
+   ],
+   "stock": {
+    "meat": 1
+   },
+   "coins": 180
+  },
+  "guard": {
+   "name": "Guard Post",
+   "job": "Guard",
+   "recipe": {},
+   "buys": [],
+   "stock": {},
+   "coins": 120
+  },
+  "house": {
+   "name": "House",
+   "job": "",
+   "recipe": {},
+   "buys": [],
+   "stock": {},
+   "coins": 0
+  },
+  "dock": {
+   "name": "Fish Dock",
+   "job": "Fisher",
+   "recipe": {
+    "in": {},
+    "out": {
+     "fish": 3
+    }
+   },
+   "buys": [
+    "salt",
+    "wood"
+   ],
+   "stock": {
+    "fish": 8
+   },
+   "coins": 190
+  },
+  "saltworks": {
+   "name": "Saltworks",
+   "job": "Salter",
+   "recipe": {
+    "src": {
+     "wood": 1
+    },
+    "in": {
+     "wood": 1
+    },
+    "out": {
+     "salt": 2
+    }
+   },
+   "buys": [
+    "wood"
+   ],
+   "stock": {
+    "salt": 4,
+    "wood": 2
+   },
+   "coins": 170
+  },
+  "lighthouse": {
+   "name": "Lighthouse",
+   "job": "Keeper",
+   "recipe": {},
+   "buys": [],
+   "stock": {},
+   "coins": 40
+  },
+  "foundry": {
+   "name": "Foundry",
+   "job": "Founder",
+   "recipe": {
+    "src": {
+     "ore": 2
+    },
+    "in": {
+     "ore": 2
+    },
+    "out": {
+     "ingot": 1
+    }
+   },
+   "buys": [
+    "ore",
+    "wood"
+   ],
+   "stock": {
+    "ore": 4,
+    "ingot": 2
+   },
+   "coins": 260
+  },
+  "lapidary": {
+   "name": "Gem Cutter",
+   "job": "Cutter",
+   "recipe": {
+    "in": {
+     "ore": 2,
+     "ingot": 1
+    },
+    "out": {
+     "gem": 1
+    }
+   },
+   "buys": [
+    "ore",
+    "ingot"
+   ],
+   "stock": {
+    "gem": 1
+   },
+   "coins": 240
+  },
+  "temple": {
+   "name": "Mine Shrine",
+   "job": "Priest",
+   "recipe": {},
+   "buys": [],
+   "stock": {},
+   "coins": 60
+  },
+  "weaver": {
+   "name": "Weaver",
+   "job": "Weaver",
+   "recipe": {
+    "src": {
+     "herb": 1
+    },
+    "in": {
+     "herb": 2
+    },
+    "out": {
+     "cloth": 1
+    }
+   },
+   "buys": [
+    "herb",
+    "wheat"
+   ],
+   "stock": {
+    "cloth": 2
+   },
+   "coins": 210
+  },
+  "caravanserai": {
+   "name": "Caravanserai",
+   "job": "Host",
+   "recipe": {
+    "in": {},
+    "out": {
+     "spice": 1
+    }
+   },
+   "buys": "*",
+   "stock": {
+    "spice": 3,
+    "cloth": 1
+   },
+   "coins": 420
+  },
+  "exchange": {
+   "name": "Price Exchange",
+   "job": "Broker",
+   "recipe": {},
+   "buys": "*",
+   "stock": {},
+   "coins": 500
+  }
+ },
+ "cities": {
+  "sunny": {
+   "name": "Sunny Town",
+   "kinds": [
+    "bakery",
+    "market",
+    "tavern",
+    "smithy",
+    "lodge",
+    "guard",
+    "house",
+    "house",
+    "house"
+   ],
+   "palette": {},
+   "population": 5,
+   "tone": "cheery",
+   "likes": "bread and gossip",
+   "exports": [
+    "bread",
+    "meat",
+    "blade"
+   ],
+   "imports": [
+    "fish",
+    "ingot",
+    "cloth",
+    "spice",
+    "salt"
+   ]
+  },
+  "copperhead": {
+   "name": "Copperhead",
+   "offset": [
+    -36,
+    -28
+   ],
+   "link": {
+    "main_gate": "n1",
+    "gate": "e"
+   },
+   "onward": {
+    "gate": "w",
+    "to": [
+     "mine"
+    ]
+   },
+   "kinds": [
+    "foundry",
+    "smithy",
+    "tavern",
+    "market",
+    "lapidary",
+    "guard",
+    "temple",
+    "house",
+    "house"
+   ],
+   "palette": {
+    "walls": [
+     [
+      0.8,
+      0.76,
+      0.7
+     ],
+     [
+      0.72,
+      0.68,
+      0.64
+     ],
+     [
+      0.86,
+      0.8,
+      0.68
+     ]
+    ],
+    "roofs": [
+     [
+      0.33,
+      0.3,
+      0.34
+     ],
+     [
+      0.45,
+      0.3,
+      0.26
+     ],
+     [
+      0.3,
+      0.34,
+      0.42
+     ]
+    ],
+    "ground": [
+     0.72,
+     0.68,
+     0.62
+    ]
+   },
+   "population": 4,
+   "tone": "gruff",
+   "likes": "iron, gems and being left alone",
+   "exports": [
+    "ingot",
+    "gem",
+    "ore",
+    "blade"
+   ],
+   "imports": [
+    "bread",
+    "ale",
+    "wood",
+    "cloth",
+    "fish"
+   ]
+  },
+  "saltmere": {
+   "name": "Saltmere",
+   "offset": [
+    -4,
+    30
+   ],
+   "link": {
+    "main_gate": "s1",
+    "gate": "n"
+   },
+   "onward": {
+    "gate": "w",
+    "to": [
+     "lake"
+    ]
+   },
+   "kinds": [
+    "dock",
+    "saltworks",
+    "tavern",
+    "market",
+    "lighthouse",
+    "guard",
+    "bakery",
+    "house",
+    "house"
+   ],
+   "palette": {
+    "walls": [
+     [
+      0.84,
+      0.92,
+      0.96
+     ],
+     [
+      0.92,
+      0.9,
+      0.82
+     ],
+     [
+      0.78,
+      0.88,
+      0.9
+     ]
+    ],
+    "roofs": [
+     [
+      0.22,
+      0.48,
+      0.62
+     ],
+     [
+      0.3,
+      0.56,
+      0.58
+     ],
+     [
+      0.62,
+      0.34,
+      0.3
+     ]
+    ],
+    "ground": [
+     0.82,
+     0.78,
+     0.64
+    ]
+   },
+   "population": 4,
+   "tone": "salty",
+   "likes": "fish, salt and tall tales",
+   "exports": [
+    "fish",
+    "salt"
+   ],
+   "imports": [
+    "wood",
+    "bread",
+    "ore",
+    "cloth",
+    "spice"
+   ]
+  },
+  "highmarket": {
+   "name": "Highmarket",
+   "offset": [
+    36,
+    -2
+   ],
+   "link": {
+    "main_gate": "e",
+    "gate": "w"
+   },
+   "onward": {
+    "gate": "e",
+    "to": [
+     "farm",
+     "ruins"
+    ]
+   },
+   "kinds": [
+    "caravanserai",
+    "exchange",
+    "weaver",
+    "market",
+    "bakery",
+    "tavern",
+    "guard",
+    "house",
+    "house"
+   ],
+   "palette": {
+    "walls": [
+     [
+      0.98,
+      0.84,
+      0.62
+     ],
+     [
+      0.96,
+      0.72,
+      0.58
+     ],
+     [
+      0.9,
+      0.9,
+      0.7
+     ]
+    ],
+    "roofs": [
+     [
+      0.78,
+      0.3,
+      0.26
+     ],
+     [
+      0.84,
+      0.54,
+      0.22
+     ],
+     [
+      0.52,
+      0.3,
+      0.56
+     ]
+    ],
+    "ground": [
+     0.86,
+     0.76,
+     0.56
+    ]
+   },
+   "population": 4,
+   "tone": "slick",
+   "likes": "a bargain, a rumour and a bit of everything",
+   "exports": [
+    "cloth",
+    "spice"
+   ],
+   "imports": [
+    "ingot",
+    "gem",
+    "fish",
+    "ale",
+    "wheat"
+   ]
+  }
+ },
+ "merchants": {
+  "count": 5,
+  "coins": 70,
+  "speed": 62,
+  "carry": 6,
+  "hp": 70,
+  "min_profit": 3,
+  "rest_secs": 14,
+  "archetypes": [
+   "merchant",
+   "peddler",
+   "nomad_merchant"
+  ],
+  "names": [
+   "Barnaby Haggle",
+   "Pennyworth",
+   "Madam Sack",
+   "Old Tolliver",
+   "Dunstan Cartwheel",
+   "Mags Longroad",
+   "Fennick the Fair",
+   "Quill",
+   "Hester Tally"
+  ],
+  "arrive": [
+   "Fresh from %s! Mind the mud, it is mostly %s.",
+   "Straight from %s with a cart of %s and a bad knee.",
+   "%s was lovely. I brought %s. Everything else was moist."
+  ],
+  "leave": [
+   "Off to %s. Wish me luck. And a dry cart.",
+   "%s calls! Mostly about money.",
+   "Heading to %s. If I am not back, I am rich."
+  ]
+ },
+ "events": [
+  {
+   "id": "festival",
+   "name": "Harvest Fair",
+   "where": "any",
+   "days": 2,
+   "weight": 1.0,
+   "goods": {
+    "ale": 1.6,
+    "bread": 1.4
+   },
+   "text": "A fair is on in %s! Ale and bread are going like hot cakes.",
+   "npc": "Everyone is drunk on the fair. Even the cat."
+  },
+  {
+   "id": "blight",
+   "name": "Wheat Blight",
+   "where": "any",
+   "days": 3,
+   "weight": 0.8,
+   "goods": {
+    "wheat": 2.0,
+    "bread": 1.35
+   },
+   "text": "Blight in the fields near %s. Wheat is scarce and bread follows.",
+   "npc": "The wheat went all grey. Like my uncle."
+  },
+  {
+   "id": "fish_run",
+   "name": "Great Fish Run",
+   "where": "saltmere",
+   "days": 2,
+   "weight": 0.9,
+   "goods": {
+    "fish": 0.55
+   },
+   "supply": {
+    "dock": {
+     "fish": 6
+    }
+   },
+   "text": "The fish are running at %s! Nets are bursting.",
+   "npc": "So many fish. I have started naming them."
+  },
+  {
+   "id": "collapse",
+   "name": "Tunnel Collapse",
+   "where": "copperhead",
+   "days": 3,
+   "weight": 0.8,
+   "goods": {
+    "ore": 1.9,
+    "ingot": 1.5
+   },
+   "text": "A tunnel collapsed near %s. Ore will be dear for a while.",
+   "npc": "The mine fell in. Gave it a stern talking-to."
+  },
+  {
+   "id": "caravan",
+   "name": "Far Caravan",
+   "where": "highmarket",
+   "days": 1,
+   "weight": 0.9,
+   "goods": {
+    "spice": 0.7
+   },
+   "supply": {
+    "caravanserai": {
+     "spice": 5,
+     "cloth": 2
+    }
+   },
+   "text": "A caravan from beyond the hills reached %s with spice and silk.",
+   "npc": "Smells like cinnamon and bad decisions."
+  },
+  {
+   "id": "raiders",
+   "name": "Road Raiders",
+   "where": "any",
+   "days": 2,
+   "weight": 0.7,
+   "goods": {
+    "blade": 1.5
+   },
+   "danger": 3,
+   "text": "Raiders (wolves, mostly) are prowling the roads near %s. Merchants are nervous.",
+   "npc": "Wolves on the road! Wolves! Not the good kind."
+  }
+ ],
+ "reasons": {
+  "scarce": [
+   "%s is scarce in %s: %s",
+   "Hardly any %s left in %s. %s"
+  ],
+  "glut": [
+   "%s is cheap in %s because the shelves are full. %s",
+   "Everyone has too much %s in %s. %s"
+  ],
+  "event": "%s",
+  "why_scarce": [
+   "only %d on the shelves",
+   "just %d left",
+   "the shelves are nearly bare (%d)"
+  ],
+  "why_glut": [
+   "%d piled up",
+   "%d sitting around",
+   "%d gathering dust"
+  ],
+  "travel": "A merchant named %s is hauling %s from %s to %s. That should even things out.",
+  "nothing": "Prices are steady. Boring, but honest."
+ },
+ "city_lines": {
+  "cheery": {
+   "greet": [
+    "Lovely day for a bit of trade!",
+    "Welcome to Sunny Town. We have bread and opinions.",
+    "Mind the pigeons. They are unionised."
+   ],
+   "scarce": "Gosh, ran out of %s. Terribly sorry about that.",
+   "glut": "Too much %s. Take some. Please.",
+   "joke": [
+    "I tried to sell a cloud once. Went for a song.",
+    "My bread is so good the ducks complain about the ones in the pond.",
+    "Why did the coin cross the road? To get to the other tide.",
+    "I am not saying the guard is lazy, but his shadow does his patrols."
+   ]
+  },
+  "gruff": {
+   "greet": [
+    "Hm.",
+    "State your business or buy something.",
+    "Mind the dust. It is mostly ore. And regret."
+   ],
+   "scarce": "No %s. Don't ask twice.",
+   "glut": "Drowning in %s. Take it, it's yours.",
+   "joke": [
+    "Dug a hole to find happiness. Found a worse hole.",
+    "A gem is just a rock with ambition.",
+    "Miners do not get lost. We get 'rerouted'.",
+    "Last foreman fell down a shaft. Had a lovely echo."
+   ]
+  },
+  "salty": {
+   "greet": [
+    "Ahoy! Mind the gulls, they steal sandwiches.",
+    "Welcome to Saltmere, where the fish are fresh and the stories are fresher.",
+    "Smells like fish? That is the money."
+   ],
+   "scarce": "The %s ran dry. Blame the tide.",
+   "glut": "More %s than a net can hold! Buy some, I beg you.",
+   "joke": [
+    "I caught a fish so big it caught me back.",
+    "Why is the sea salty? It never learned to stop crying about the shore.",
+    "I named my boat 'Nauti Buoy'. The harbourmaster was not amused.",
+    "Fish are just wet birds, change my mind."
+   ]
+  },
+  "slick": {
+   "greet": [
+    "A customer! Do come in, do come in.",
+    "Highmarket: if we do not have it, you did not need it.",
+    "Psst. Spice? Silk? A rumour? All on sale."
+   ],
+   "scarce": "%s is rare, which makes it a bargain at any price.",
+   "glut": "%s? Practically free. I am practically weeping.",
+   "joke": [
+    "A bargain is just a loss with good PR.",
+    "I once sold a map to a man who was standing on the thing it showed.",
+    "Everything has a price. Mine is just fashionably high.",
+    "Sold a haunted bucket yesterday. It came back. Sold it again."
+   ]
+  }
+ },
+ "npc_jokes": [
+  "I would tell you a joke about paper, but it is tearable.",
+  "Cardboard is the best material. You can always box your feelings.",
+  "My boss said I should think outside the box. I am a cutout. That is all I can do.",
+  "I get flat jokes. They have no depth.",
+  "Do not lean on me. I fold under pressure.",
+  "I tried to pay with a coin. Got a receipt written on a coin.",
+  "The guard says the wolves are 'basically puppies'. He has no left arm.",
+  "I asked the baker for a loaf. He said 'dough not'. I do not get it either.",
+  "Slimes are very supportive. They always stick by you.",
+  "I stood up straight today. Nobody noticed. I am very thin."
+ ]
 }

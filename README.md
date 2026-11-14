@@ -60,6 +60,18 @@ Play runs a short tutorial (skippable, remembered).
 | M | Map (click a discovered place to fast travel) |
 | L | Quest log |
 | Tab | Town ledger and NEAR log |
+| B | Bestiary (beasts you have met, stats, drops) |
+
+**Touch** (phones, tablets, mobile exports, `--touch`, or the first finger on
+the screen): a floating stick on the left (push to the edge to sprint), cardboard
+discs on the right (strike, jump, use, dodge, beam, dragon, eat, sprint), a menu
+column (map, quests, ledger, beasts, help), one-finger drag turns the camera,
+pinch zooms.
+
+**Wallet.** The title screen lets you connect your own NEAR testnet account
+(web: "Connect NEAR wallet" redirect login; desktop: type `name.testnet`, then
+Link). Winnings are then paid to it. Play always works as a guest. The relayer
+checks the name with `POST /link`.
 
 ## What is in the world
 
@@ -83,6 +95,25 @@ Play runs a short tutorial (skippable, remembered).
 - **UI**: a hero medallion with HP, stamina and ink gauges, a round rotating
   minimap, a NEAR status chip (click it for the ledger), a combo counter, and a
   map with fog of war.
+
+- **Cities.** Four towns (Sunny, Copperhead, Saltmere, Highmarket) with their
+  own palettes, goods, treasuries and roads between them. **Travelling
+  merchants** with real wallets and carts walk the roads trading for profit.
+  Special buildings: the exchange (price board across cities) and the temple
+  (E to pray, 6 coins to heal).
+- **Careers.** XP from kills, quests, trade profit and shifts; levels raise HP,
+  stamina, ink and damage. Ask for a job in any shop ("I want a job here."):
+  requirements apply, wages come from the employer's real wallet, raises come
+  with rank, missed shifts or attacking staff get you fired, and shops hold a
+  grudge. Guards are hired by the city and earn bounties. If you are knocked
+  out you wake at the nearest town, minus a small fee.
+- **Story.** The Penny Crown in four chapters (journal in the quest panel),
+  rewards from a funded crown vault, an ending and New Game Plus.
+- **Events and life.** Daily festivals, blight, fish runs, collapses, caravans
+  and raider attacks move prices and make people talk. Ask "Why are prices like
+  this?".
+- **Bestiary.** 15 cut-paper sprite beasts, including three rare dragons
+  (level 5+), made from a sprite pack by `tools/cardboardize.py`.
 
 ## How the economy works
 
@@ -148,9 +179,21 @@ Point the game at another relayer with `--relayer=URL` after `--`, the
 
 After `--`: `--seed=42`, `--hour=21`, `--style=cute|real`,
 `--at=farm|mine|lake|ruins|wood|lookout`,
-`--demo=fight|dire|chop|near|beam|talk|shop|map|faces`, `--title` (force the
-title card), `--tutorial` (force the tutorial), `--weather=rain`, `--report=1`
-(print the ledger each day), `--shot=path.png --frames=N` (screenshot, quit).
+`--demo=fight|dire|chop|near|beam|talk|shop|map|faces|career|story|guard|death|merchants|beasts|bestiary`
+(career, story, guard, merchants print PASS lines), `--title` (force the title
+card), `--tutorial` (force the tutorial), `--weather=rain`, `--report=1` (print
+the ledger each day), `--touch`, `--low-end`, `--dragons` (dragons spawn often),
+`--town=id`, `--shot=path.png --frames=N` (screenshot, quit; add
+`--fixed-fps 60` before `--` for timed tweens).
+`scenes/monster_test.tscn` shows every beast in a grid (`-- --raw` shows all
+sprites).
+
+### Web and low-end
+
+`web/shell.html` is the custom loader and the NEAR login bridge
+(`window.pennyfold`). The export preset excludes dev folders to keep the pck
+small. Web and mobile builds switch on `Game.low_end`: smaller bakes, fewer
+extras.
 
 ## Code map
 
@@ -166,6 +209,12 @@ title card), `--tutorial` (force the tutorial), `--weather=rain`, `--report=1`
 - `scripts/fx.gd`, `shaders/`: effects (slashes, beams, decals), terrain,
   props, bubble and bar shaders.
 - `scripts/hud.gd`, `tutorial.gd`, `card_box.gd`: UI.
+- `scripts/career.gd`, `story.gd`, `merchant.gd`: XP, jobs and firing; the
+  Penny Crown chapters; travelling merchants. Numbers live in `data/careers.json`,
+  `story.json`, `bestiary.json`.
+- `scripts/touch_controls.gd`: on-screen controls feeding the Input Map.
+- `tools/cardboardize.py`: turns `assets/monsters` into `assets/beasts`.
+- `web/shell.html`: web loader and wallet bridge.
 - `server/`: relayer and its self-test.
 
 ## Reused assets

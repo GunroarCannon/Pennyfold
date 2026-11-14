@@ -15,7 +15,7 @@
 //   node server/relayer.mjs --live     # testnet, reads server/.env
 //
 // Endpoints: GET /status, GET /health, POST /genesis {ledger}, POST /settle
-// {day, flows, ledger}, GET /accounts.
+// {day, flows, ledger, player_account?}, POST /link {account_id}, GET /accounts.
 //
 // It also serves the Godot web export (default ../build/web, or WEB_DIR) from
 // the same origin, so the browser build talks to it with no CORS or mixed
@@ -184,13 +184,24 @@ async function ensureAccount(id, coins) {
   return { account, created: true };
 }
 
-async function settle(day, flows, ledger) {
+const ACCOUNT_RE = /^(([a-z\d]+[-_])*[a-z\d]+\.)*([a-z\d]+[-_])*[a-z\d]+$/;
+// The player's own wallet. Anything paid TO the in-game "player" goes there
+// instead of the sub-account; the player's spending still comes from the purse.
+async function checkAccount(id) {
+  if (typeof id !== "string" || id.length < 2 || id.length > 64 || !ACCOUNT_RE.test(id) || !(id.endsWith(".testnet") || id.length === 64)) {
+    return { ok: false, note: "That is not a testnet account name (use name.testnet)." };
+  }
+  if (!LIVE) return { ok: true, account: id, note: "dry run: format accepted, existence not checked" };
+  return (await exists(id)) ? { ok: true, account: id } : { ok: false, note: `${id} does not exist on testnet.` };
+}
+
+async function settle(day, flows, ledger, playerAccount) {
   const txs = [];
   for (const f of flows) {
     await ensureAccount(f.from, ledger?.[f.from] ?? 0);
     await ensureAccount(f.to, ledger?.[f.to] ?? 0);
     const from = accountFor(f.from);
-    const to = accountFor(f.to);
+    const to = f.to === "player" && playerAccount ? playerAccount : accountFor(f.to);
     const deposit = COIN * BigInt(f.amount);
     if (!LIVE) {
       console.log(`[dry-run] day ${day}: ${from} -> ${to}  ${f.amount} coins`);
@@ -261,10 +272,15 @@ const server = http.createServer(async (req, res) => {
       }
       return send(res, 200, { ok: true, created: made.length });
     }
+    if (req.method === "POST" && req.url === "/link") {
+      const { account_id = "" } = await body(req);
+      return send(res, 200, await checkAccount(account_id));
+    }
     if (req.method === "POST" && req.url === "/settle") {
-      const { day = 0, flows = [], ledger = {} } = await body(req);
+      const { day = 0, flows = [], ledger = {}, player_account = "" } = await body(req);
+      const pa = player_account ? (await checkAccount(player_account)).ok ? player_account : "" : "";
       const clean = flows.filter((f) => f && typeof f.from === "string" && typeof f.to === "string" && Number.isInteger(f.amount) && f.amount > 0 && f.amount < 100000);
-      const txs = await settle(day, clean, ledger);
+      const txs = await settle(day, clean, ledger, pa);
       return send(res, 200, { ok: txs.every((t) => !t.error), txs });
     }
     if (req.method === "GET" || req.method === "HEAD") return serveStatic(req, res);

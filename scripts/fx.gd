@@ -653,30 +653,7 @@ static func smoke(parent: Node3D, at: Vector3) -> CPUParticles3D:
 
 ## Cardboard flames: orange paper flakes rising, plus a warm light.
 static func campfire(parent: Node3D, at: Vector3) -> void:
-	var p := CPUParticles3D.new()
-	p.amount = 16
-	p.lifetime = 0.8
-	var q := QuadMesh.new()
-	q.size = Vector2(0.3, 0.42)
-	q.material = _confetti_mat
-	p.mesh = q
-	p.direction = Vector3.UP
-	p.spread = 15.0
-	p.initial_velocity_min = 1.0
-	p.initial_velocity_max = 2.0
-	p.gravity = Vector3(0, 0.5, 0)
-	p.emission_shape = CPUParticles3D.EMISSION_SHAPE_SPHERE
-	p.emission_sphere_radius = 0.25
-	var c := Curve.new()
-	c.add_point(Vector2(0, 1.0))
-	c.add_point(Vector2(1, 0.1))
-	p.scale_amount_curve = c
-	var g := Gradient.new()
-	g.set_color(0, Color(1.0, 0.85, 0.3))
-	g.set_color(1, Color(0.95, 0.30, 0.15))
-	p.color_ramp = g
-	p.position = at + Vector3(0, 0.2, 0)
-	parent.add_child(p)
+	FireFx.campfire(parent, at, 1.0)
 	var glow := spr(parent, at + Vector3(0, 0.6, 0), 0, Color(1.0, 0.6, 0.25, 0.6), 2.8)
 	var gt := glow.create_tween().set_loops()
 	gt.tween_property(_mat(glow), "shader_parameter/fade", 0.6, 0.25)
@@ -719,7 +696,7 @@ static func _ramp(cols: Array) -> Gradient:
 ## by day, fireflies at night, paper rain during showers.
 static func ambient(parent: Node3D, cute: bool) -> Dictionary:
 	var petals := CPUParticles3D.new()
-	petals.amount = 70
+	petals.amount = 28 if Game.low_end else 70
 	petals.lifetime = 9.0
 	petals.preprocess = 9.0
 	var q := QuadMesh.new()
@@ -741,7 +718,7 @@ static func ambient(parent: Node3D, cute: bool) -> Dictionary:
 	parent.add_child(petals)
 
 	var flies := CPUParticles3D.new()
-	flies.amount = 45
+	flies.amount = 18 if Game.low_end else 45
 	flies.lifetime = 4.0
 	var fq := QuadMesh.new()
 	fq.size = Vector2(0.28, 0.28)

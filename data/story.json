@@ -1,0 +1,37 @@
+{
+	"_readme": "The Penny Crown has been torn into four corners. Each chapter: a story NPC (the guard captain of 'city'), a goal (hunt: kind or 'any' x count; deliver: good x count to the captain; boss: defeat the Thorn Warden), a minimum level, a reward paid from the crown vault (real coins), and the city it opens (the captains then send you there). goal types: hunt, deliver, boss.",
+
+	"title": "The Penny Crown",
+	"vault": 520,
+	"blurb": "A king once paid his whole kingdom with one great coin, the Penny Crown. It was torn in four and the pieces were hidden in four cities. Without it, nobody quite trusts the coins in their pockets.",
+
+	"chapters": [
+		{"id": "sunny", "title": "The First Corner", "city": "sunny", "level": 1,
+			"intro": "Welcome to Sunny Town. The first corner of the Penny Crown was lost on the road, and beasts have been guarding it. Beat back four of them and I will tell you where the next piece went.",
+			"goal": {"type": "hunt", "monster": "any", "count": 4},
+			"done": "Four beasts down. You have the arm for this. The next corner is in Copperhead, to the west past the hills. Tell any guard and they will send you on.",
+			"reward": 60, "xp": 60, "unlocks": "copperhead"},
+		{"id": "copperhead", "title": "The Copper Corner", "city": "copperhead", "level": 3,
+			"intro": "Copperhead. Mind the dust. The second corner is in the old mine, under a troll that has not moved in a century. Take it down and the corner is yours.",
+			"goal": {"type": "hunt", "monster": "troll", "count": 1},
+			"done": "A troll, felled. Even the foreman looks impressed, and he looks at nothing. Saltmere holds the third corner, south by the sea.",
+			"reward": 120, "xp": 120, "unlocks": "saltmere"},
+		{"id": "saltmere", "title": "The Salt Corner", "city": "saltmere", "level": 4,
+			"intro": "Saltmere. Welcome, friend of the tide. The third corner was sold to a gem collector, who wants two cut gems for it. Cut gems come from Copperhead's gem cutter. Buy two, carry them here, and the corner is yours.",
+			"goal": {"type": "deliver", "good": "gem", "count": 2},
+			"done": "Two fine gems! The collector is delighted, and the corner is yours. The last piece is in Highmarket, where everything is sold at least twice.",
+			"reward": 180, "xp": 180, "unlocks": "highmarket"},
+		{"id": "highmarket", "title": "The Last Corner", "city": "highmarket", "level": 6,
+			"intro": "Highmarket. The last corner sits on the throne at Thorn Ruins, held by the Thorn Warden. Beat it, and the Penny Crown is whole again.",
+			"goal": {"type": "boss", "monster": "boss", "count": 1},
+			"done": "The Warden is down and the four corners fit together. The Penny Crown is whole! The coins in every pocket mean something again.",
+			"reward": 400, "xp": 300, "unlocks": ""}
+	],
+
+	"ending": {
+		"title": "THE CROWN IS WHOLE",
+		"sub": "Pennyfold remembers your name",
+		"text": "The four corners knit together and the town cheers. The beasts, however, have heard about it, and they are annoyed. New Game Plus begins: every beast is tougher now, and the rewards are the same. Good luck."
+	},
+	"plus_hp": 0.45
+}

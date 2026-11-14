@@ -60,13 +60,16 @@ var KINDS := {
 		"awning": [Color(0.88, 0.46, 0.62), Color(0.99, 0.94, 0.88)], "sign": "cloth"},
 	"caravanserai": {"wall": Color(0.98, 0.82, 0.60), "roof": Color(0.78, 0.34, 0.24), "h": 3.0, "style": "plain",
 		"awning": [Color(0.88, 0.60, 0.24), Color(0.99, 0.94, 0.80)], "sign": "spice"},
+	"inn": {"name": "Inn", "wall": Color(0.96, 0.88, 0.72), "roof": Color(0.30, 0.46, 0.60), "job": "Innkeeper", "shop": false, "h": 3.3,
+		"style": "timber", "awning": [Color(0.30, 0.50, 0.66), Color(0.99, 0.95, 0.85)], "sign": "ale",
+		"recipe": {}, "buys": [], "stock": {}, "coins": 140},
 	"exchange": {"wall": Color(0.92, 0.88, 0.70), "roof": Color(0.32, 0.48, 0.40), "h": 3.0, "style": "stone",
 		"awning": [Color(0.30, 0.52, 0.40), Color(0.98, 0.96, 0.84)], "sign": "coin"},
 }
 ## Which look (archetype) works each building, when it is not one of the
 ## original five (those have job_<kind> archetypes of their own).
 const JOB_FOLK := {"dock": "fisher", "saltworks": "sailor", "lighthouse": "sailor", "foundry": "blacksmith", "lapidary": "alchemist",
-	"temple": "priest", "weaver": "bard", "caravanserai": "nomad_merchant", "exchange": "merchant"}
+	"temple": "priest", "inn": "job_tavern", "weaver": "bard", "caravanserai": "nomad_merchant", "exchange": "merchant"}
 ## city id -> archetypes.gd city theme
 const CITY_FOLK_KEY := {"sunny": "home", "copperhead": "copper", "saltmere": "port", "highmarket": "souk"}
 const HOUSE_WALLS := [Color(0.98, 0.88, 0.72), Color(0.86, 0.92, 0.98), Color(0.99, 0.84, 0.84), Color(0.90, 0.96, 0.82)]
@@ -102,6 +105,16 @@ var cute := true
 var font: Font
 var world: World
 var quests: Quests
+var career: Career
+var skills: Skills
+var allies: Array = []
+var burning := {}
+var story: Story
+var _npc_seq := 0
+var _event_timer := 5.0
+var nearby_temple := ""
+var bestiary := {}
+var _met_t := 0.0
 var buildings: Array = []
 ## Each town: {id, name, origin (tile), rect (px), start (px), kinds, palette, folk, tone}. towns[0] is Sunny Town.
 var towns: Array = []
@@ -190,8 +203,11 @@ func _ready() -> void:
 	if _arg_value("--hour=") != "":
 		clock = fposmod((float(_arg_value("--hour=")) - 6.0) / 24.0 * DAY_SECONDS, DAY_SECONDS)
 	Economy.reset()
+	Monster.load_bestiary()
 	_merge_kinds()
 	Economy.add_wallet(Quests.ESCROW, 0)
+	story = Story.new()
+	Economy.add_wallet(Story.VAULT, story.vault_coins())
 	bake_root = Node.new()
 	add_child(bake_root)
 	Fx.setup(bake_root)
@@ -217,7 +233,7 @@ func _ready() -> void:
 		raining = true
 		rain_left = 999.0
 
-	start_pos = Vector2((TownGen.ROAD_X[0] + 0.5) * TILE, (TownGen.ROAD_Y[1] + 0.5) * TILE)
+	start_pos = town_by_id("sunny")["start"]
 	player = {"pos": start_pos, "hp": 100.0, "max_hp": 100.0, "facing": 1.0, "moving": 0.0, "heading": Vector2(0, -1),
 		"cool": 0.0, "beam_cool": 0.0, "ink": 100.0, "knock": Vector2.ZERO, "last_hurt": -99.0, "sprint": false, "z": 0.0, "vz": 0.0,
 		"stamina": 100.0, "tired": false,
@@ -225,10 +241,12 @@ func _ready() -> void:
 		"dash_dir": Vector2.ZERO, "iframes": 0.0, "grace": 0.0, "perfected": false, "move_dir": Vector2.ZERO,
 		"combo_hits": 0, "combo_show": 0.0}
 	Economy.add_wallet("player", 60)
-	var hero := {"skin": SKINS[0], "hair": Color(0.32, 0.20, 0.14), "cloth": Color(0.38, 0.40, 0.46), "pants": Color(0.26, 0.24, 0.26),
-		"hat": "spiky", "weapon": "axe",
-		"eyes": "tall", "brows": "dash", "chin": 0.22}
-	player_view = _make_standee(_bake_person(hero, Vector2i(256, 320)), 1.75 if cute else 2.3, "You")
+	skills = Skills.new()
+	career = Career.new()
+	career.skills = skills
+	career.apply_stats(self, true)
+	player_view = _make_standee(_bake_person(hero_look(), Vector2i(256, 320)), 1.75 if cute else 2.3, "You")
+	player_view.show_hp = false
 
 	await _stage(0.6, "Waking the townsfolk")
 	# Sunny Town is populated now; the other cities fill up as you approach them
@@ -236,6 +254,7 @@ func _ready() -> void:
 	_populate(town_by_id("sunny"))
 	founding_main = npcs.size()
 	founding_size = npcs.size()
+	_spawn_merchants()
 
 	camera = Camera3D.new()
 	camera.fov = 50.0
@@ -254,6 +273,7 @@ func _ready() -> void:
 	Economy.message.emit("Welcome to %s. Every coin here belongs to someone." % Game.TITLE)
 	Economy.message.emit("Shops trade at their doors (E). The quest board pays real coins from escrow.")
 	Chain.attach(self)
+	Economy.transferred.connect(_on_gold)
 
 	marker = _billboard(Bake.make(bake_root, "marker", {}, Vector2i(96, 128)), 0.9, Vector3.ZERO)
 	marker.visible = false
@@ -276,6 +296,12 @@ func _apply_debug_args() -> void:
 	var tw := _arg_value("--town=")
 	if tw != "" and not town_by_id(tw).is_empty():
 		player["pos"] = town_by_id(tw)["start"]
+		cam_focus = _to3(player["pos"])
+	if _arg_value("--cam=") != "":
+		var cp := _arg_value("--cam=").split(",")
+		cam_dist = float(cp[0])
+		if cp.size() > 1:
+			cam_pitch = float(cp[1])
 		cam_focus = _to3(player["pos"])
 	var at := _arg_value("--at=")
 	if at != "" and not world.landmark(at).is_empty():
@@ -326,12 +352,39 @@ func _apply_debug_args() -> void:
 			_add_monster("bat", Vector2(player["pos"]) + Vector2(200, -60))
 			_add_monster("shroom", Vector2(player["pos"]) + Vector2(-120, -40))
 			player["heading"] = Vector2(1, -0.3).normalized()
-			_player_beam.call_deferred()
+			skills.known["blast"] = 1
+			cast.call_deferred("blast")
+		"creator":
+			Game.hero["made"] = false
+			hud.menus.show_creator.call_deferred(func() -> void: pass)
+		"skilltree":
+			skills.known["blast"] = 1
+			skills.known["mend"] = 1
+			skills.known["tough"] = 2
+			skills.points = 3
+			career.level = 6
+			hud.menus.toggle_skills.call_deferred()
+		"pause":
+			hud.menus.toggle_pause.call_deferred()
+		"skills":
+			for k in skills.by_id:
+				skills.known[k] = 1
+			player["ink"] = 400.0
+			player["max_ink"] = 400.0
+			player["heading"] = Vector2(1, 0)
+			for off in [Vector2(200, -30), Vector2(260, 40), Vector2(150, 70)]:
+				_add_monster("wolf", Vector2(player["pos"]) + off)
+			get_tree().create_timer(0.3).timeout.connect(cast.bind("flame"))
+			get_tree().create_timer(0.9).timeout.connect(cast.bind("summon"))
+			get_tree().create_timer(1.5).timeout.connect(cast.bind("inferno"))
+			get_tree().create_timer(2.4).timeout.connect(cast.bind("greater_blast"))
 		"dragon":
 			_add_monster("bat", Vector2(player["pos"]) + Vector2(-220, -30))
 			_add_monster("shroom", Vector2(player["pos"]) + Vector2(-140, 20))
 			player["heading"] = -_cam_right()
-			get_tree().create_timer(1.0).timeout.connect(_player_dragon)
+			skills.known["dragon"] = 1
+			player["ink"] = 100.0
+			get_tree().create_timer(1.0).timeout.connect(cast.bind("dragon"))
 		"talk":
 			var n: Npc = npcs[1]
 			n.pos = Vector2(player["pos"]) + Vector2(70, -20)
@@ -348,11 +401,100 @@ func _apply_debug_args() -> void:
 				var n: Npc = npcs[i]
 				n.pos = Vector2(player["pos"]) + Vector2(-150.0 + i * 43.0, 50.0)
 				n.wander_target = n.pos
+		"career":
+			get_tree().create_timer(0.5).timeout.connect(_career_selftest)
+		"story":
+			career.gain(self, 400, "test")
+			var cap := story.giver(self)
+			var say := func(opt: String) -> void: print("STORY ", opt, ": ", story.choose(self, opt).left(90).replace("
+", " "))
+			say.call("intro")
+			for i in 4:
+				story.state = "active"
+				var g: Dictionary = story.current()["goal"]
+				story.progress = int(g["count"]) if g["type"] != "deliver" else 0
+				if g["type"] == "deliver":
+					Economy.add_item("player", g["good"], int(g["count"]))
+				print("STORY chapter ", story.chapter, " met=", story.goal_met(self), " coins=", Economy.wallets["player"]["coins"], " vault=", Economy.wallets["crown"]["coins"])
+				say.call("finish")
+			print("STORY finished=", story.finished, " plus=", story.plus, " level=", career.level, " total_coins=", Economy.total_coins())
+			get_tree().create_timer(3.0).timeout.connect(func(): get_tree().quit())
+		"beasts":
+			var ks := ["spider", "scorpion", "skeleton", "golem", "ogre", "crocodog", "mummy", "dragon_red"]
+			for i in ks.size():
+				var ang := TAU * i / ks.size()
+				_add_monster(ks[i], Vector2(player["pos"]) + Vector2(cos(ang), sin(ang)) * (230.0 + (80.0 if i == 7 else 0.0)))
+			for m in monsters:
+				m.aggro = 0.0
+			cam_dist = 17.0
+		"bestiary":
+			for k in Monster.TYPES:
+				if randf() < 0.6:
+					bestiary[k] = {"seen": 30, "kills": randi() % 9, "best_tier": randi() % 3}
+			hud.toggle_bestiary.call_deferred()
+		"merchants":
+			Engine.time_scale = 12.0
+			get_tree().create_timer(25.0, true, false, true).timeout.connect(func():
+				Engine.time_scale = 1.0
+				for n in npcs:
+					if n is Merchant:
+						print("MERCHANT ", n.display_name, " phase=", n.phase, " coins=", n.coins(), " profit=", n.profit_total, " cargo=", n.cargo(), " route=", n.route_text(self), " hp=", n.hp)
+				print("MERCHANT events=", Economy.active_events.size(), " day=", day_number(), " total_coins=", Economy.total_coins())
+				get_tree().quit())
+		"death":
+			player["hurt_by"] = "a Dire Wolf"
+			career.gain(self, 70, "test")
+			get_tree().create_timer(0.4).timeout.connect(_knock_out)
+		"guard":
+			var wolf := _add_monster("wolf", town_by_id("sunny")["start"] + Vector2(260, 40), 0)
+			get_tree().create_timer(14.0).timeout.connect(func():
+				print("GUARD TEST wolf_alive=", monsters.has(wolf), " hp=", wolf.hp, " killer=", wolf.killer_id)
+				get_tree().quit())
 		"map":
 			for l in world.landmarks:
 				discovered[l["id"]] = true
 				hud._reveal(l["pos"], int(l["r"]) + 10)
 			hud.toggle_map.call_deferred()
+
+
+## Headless check of the career rules: prints PASS/FAIL lines and quits.
+func _career_selftest() -> void:
+	var ok := func(name: String, cond: bool) -> void: print(("PASS " if cond else "FAIL ") + name)
+	var lv0 := career.level
+	career.gain(self, career.needed() + 1, "test")
+	ok.call("level up", career.level == lv0 + 1 and float(player["max_hp"]) > 100.0)
+	var bak := _shop_of_kind("bakery")
+	ok.call("apply bakery", career.apply(self, bak) == "")
+	ok.call("no 2nd job", career.apply(self, bak) != "")
+	var smithy := _shop_of_kind("smithy")
+	career.quit(self)
+	ok.call("smithy needs more", career.apply(self, smithy) != "")
+	career.apply(self, bak)
+	career.job["grace_day"] = -5
+	player["pos"] = door_of(bak)
+	hour = 10.0
+	career.update(self, 60.0)
+	var coins0 := int(Economy.wallets["player"]["coins"])
+	career.payday(self)
+	ok.call("paid for full shift", int(Economy.wallets["player"]["coins"]) > coins0)
+	career.payday(self)
+	career.payday(self)
+	ok.call("fired after 2 missed shifts", not career.has_job())
+	ok.call("grudge blocks hire", career.apply(self, bak) != "")
+	career.grudges.clear()
+	career.apply(self, bak)
+	var n: Npc = null
+	for o in npcs:
+		if o.job_id == bak:
+			n = o
+	career.on_assault(self, n)
+	ok.call("fired for attacking staff", not career.has_job())
+	ok.call("shop refuses after assault", career.refuses(self, bak))
+	var coins1 := int(Economy.wallets["player"]["coins"])
+	_knock_out()
+	ok.call("knock out halves coins", int(Economy.wallets["player"]["coins"]) <= coins1 and player["down"])
+	print("career: level ", career.level, " xp ", career.xp, "/", career.needed())
+	get_tree().quit()
 
 
 func _seed_from_args() -> int:
@@ -372,7 +514,7 @@ func _setup_input() -> void:
 		"move_left": [KEY_A, KEY_LEFT], "move_right": [KEY_D, KEY_RIGHT],
 		"move_up": [KEY_W, KEY_UP], "move_down": [KEY_S, KEY_DOWN],
 		"interact": [KEY_E], "attack": [KEY_J], "jump": [KEY_SPACE], "keys": [KEY_F1], "style": [KEY_F2], "beam": [KEY_K, KEY_R], "dragon": [KEY_V], "dodge": [KEY_X, KEY_CTRL], "eat": [KEY_F],
-		"ledger": [KEY_TAB], "map": [KEY_M], "quests": [KEY_L], "cam_left": [KEY_Q], "cam_right": [KEY_C],
+		"ledger": [KEY_TAB], "skills": [KEY_T], "skill_1": [KEY_1], "skill_2": [KEY_2], "skill_3": [KEY_3], "skill_4": [KEY_4], "skill_5": [KEY_5], "skill_6": [KEY_6], "map": [KEY_M], "quests": [KEY_L], "bestiary": [KEY_B], "cam_left": [KEY_Q], "cam_right": [KEY_C],
 		"sprint": [KEY_SHIFT], "cancel": [KEY_ESCAPE],
 	}
 	for action in binds:
@@ -382,9 +524,10 @@ func _setup_input() -> void:
 			var ev := InputEventKey.new()
 			ev.keycode = code
 			InputMap.action_add_event(action, ev)
-	var mb := InputEventMouseButton.new()
-	mb.button_index = MOUSE_BUTTON_LEFT
-	InputMap.action_add_event("attack", mb)
+	if not Game.touch:
+		var mb := InputEventMouseButton.new()
+		mb.button_index = MOUSE_BUTTON_LEFT
+		InputMap.action_add_event("attack", mb)
 
 
 ## Folds the economy data into the building looks: names, jobs, recipes,
@@ -414,9 +557,10 @@ func _make_towns() -> void:
 
 
 func _town_entry(id: String, d: Dictionary, origin: Vector2i) -> Dictionary:
-	var rect := Rect2(Vector2(origin) * TILE, Vector2(TownGen.COLS, TownGen.ROWS) * TILE)
-	return {"id": id, "name": d["name"], "origin": origin, "rect": rect, "population": int(d.get("population", 4)),
-		"start": (Vector2(origin) + Vector2(TownGen.ROAD_X[0] + 0.5, TownGen.ROAD_Y[1] + 0.5)) * TILE,
+	var L: Dictionary = world.layouts[id]
+	var rect := Rect2(Vector2(origin) * TILE, Vector2(L["size"]) * TILE)
+	return {"id": id, "name": d["name"], "origin": origin, "rect": rect, "population": int(d.get("population", 4)), "layout": L,
+		"start": (Vector2(origin) + (L["start"] as Vector2)) * TILE,
 		"kinds": d["kinds"], "palette": d.get("palette", {}), "folk": CITY_FOLK_KEY.get(id, "home"), "tone": d.get("tone", "cheery")}
 
 
@@ -444,8 +588,11 @@ func _build_town_grid() -> void:
 
 	for tn in towns:
 		var pref: String = "" if tn["id"] == "sunny" else tn["id"] + "_"
-		var layout: Dictionary = TownGen.generate(rng.seed + hash(tn["id"]) % 1000, tn["kinds"], tn["origin"], pref)
-		for b in layout["buildings"]:
+		var layout: Dictionary = tn["layout"]
+		for b0 in layout["buildings"]:
+			var b: Dictionary = b0.duplicate()
+			b["id"] = pref + String(b0["id"])
+			b["rect"] = Rect2i(b0["rect"].position + tn["origin"], b0["rect"].size)
 			var r: Rect2i = b["rect"]
 			var px := Rect2(Vector2(r.position) * TILE, Vector2(r.size) * TILE)
 			var k: Dictionary = KINDS[b["kind"]]
@@ -473,16 +620,10 @@ func _apply_world_solids() -> void:
 
 
 func _fence_tiles(tn: Dictionary) -> Array:
-	var o: Vector2i = tn["origin"]
+	var o: Vector2 = Vector2(tn["origin"])
 	var out: Array = []
-	for tx in range(-1, TownGen.COLS + 1):
-		for ty in [-1, TownGen.ROWS]:
-			if not (tx in TownGen.ROAD_X):
-				out.append(Vector2i(tx, ty) + o)
-	for ty in range(0, TownGen.ROWS):
-		for tx in [-1, TownGen.COLS]:
-			if not (ty in TownGen.ROAD_Y):
-				out.append(Vector2i(tx, ty) + o)
+	for f in tn["layout"]["fence"]:
+		out.append(Vector2i((o + (f["p"] as Vector2)).floor()))
 	return out
 
 
@@ -514,6 +655,10 @@ func _build_environment() -> void:
 	sun.rotation_degrees = Vector3(-50, -25, 0)
 	sun.directional_shadow_max_distance = 60.0
 	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS
+	if Game.low_end:
+		sun.directional_shadow_mode = DirectionalLight3D.SHADOW_ORTHOGONAL
+		sun.directional_shadow_max_distance = 40.0
+		RenderingServer.directional_shadow_atlas_set_size(1024, true)
 	add_child(sun)
 
 
@@ -539,26 +684,45 @@ func _mesh(mesh: Mesh, mat: Material, at: Vector3, parent: Node3D) -> MeshInstan
 
 
 func _build_town_ground(tn: Dictionary) -> void:
+	var L: Dictionary = tn["layout"]
 	var og := Vector2(tn["origin"]) * 1.5
 	# One shader draws every road as a union of rounded strips: soft junction
 	# fillets, round ends, a wobbly paper-cut edge and a curb lip.
 	var cob := Bake.make(bake_root, "cobble", {"col": Color(0.80, 0.76, 0.70) if cute else Color(0.66, 0.63, 0.58)}, Vector2i(256, 256))
-	var y0 := -1.6
-	var y1 := TownGen.ROWS + 1.6
-	var x0 := -1.6
-	var x1 := TownGen.COLS + 1.6
-	var rects: Array = []
-	for x in TownGen.ROAD_X:
-		rects.append(Vector4((x + 0.5) * 1.5 + og.x, (y0 + y1) * 0.75 + og.y, 0.7, (y1 - y0) * 0.75))
-	for y in TownGen.ROAD_Y:
-		rects.append(Vector4((x0 + x1) * 0.75 + og.x, (y + 0.5) * 1.5 + og.y, (x1 - x0) * 0.75, 0.7))
-	while rects.size() < 12:
-		rects.append(Vector4(0, 0, 0, 0))
+	var sz: Vector2i = L["size"]
+	var x0 := -3.4
+	var y0 := -3.4
+	var x1 := sz.x + 3.4
+	var y1 := sz.y + 3.4
+	var segs := PackedVector4Array()
+	var segw := PackedFloat32Array()
+	for sg in L["roads"]:
+		if segs.size() >= 64:
+			break
+		var a2: Vector2 = Vector2(tn["origin"]) + (sg[0] as Vector2)
+		var b2: Vector2 = Vector2(tn["origin"]) + (sg[1] as Vector2)
+		segs.append(Vector4(a2.x * 1.5, a2.y * 1.5, b2.x * 1.5, b2.y * 1.5))
+		segw.append(float(sg[2]) * 1.5)
+	var seg_n := segs.size()
+	while segs.size() < 64:
+		segs.append(Vector4(0, 0, 0, 0))
+		segw.append(0.0)
+	var discs := PackedVector4Array()
+	for d in L["discs"]:
+		var dc: Vector2 = Vector2(tn["origin"]) + (d[0] as Vector2)
+		discs.append(Vector4(dc.x * 1.5, dc.y * 1.5, float(d[1]) * 1.5, 0.0))
+	var disc_n := mini(discs.size(), 4)
+	while discs.size() < 4:
+		discs.append(Vector4(0, 0, 0, 0))
 	var mat := ShaderMaterial.new()
 	mat.shader = ROAD
-	mat.set_shader_parameter("rects", PackedVector4Array(rects))
-	mat.set_shader_parameter("rect_n", TownGen.ROAD_X.size() + TownGen.ROAD_Y.size())
-	mat.set_shader_parameter("disc_n", 0)
+	mat.set_shader_parameter("rects", PackedVector4Array([Vector4(0, 0, 0, 0)]))
+	mat.set_shader_parameter("rect_n", 0)
+	mat.set_shader_parameter("segs", segs)
+	mat.set_shader_parameter("segw", segw)
+	mat.set_shader_parameter("seg_n", seg_n)
+	mat.set_shader_parameter("discs", discs)
+	mat.set_shader_parameter("disc_n", disc_n)
 	mat.set_shader_parameter("mode", 0)
 	mat.set_shader_parameter("fillet", 0.55)
 	mat.set_shader_parameter("tex", cob)
@@ -729,33 +893,35 @@ func _prop(tex: Texture2D, world_h: float, at: Vector3, rot_y: float) -> Node3D:
 
 func _build_fence(tn: Dictionary) -> void:
 	var tex := Bake.make(bake_root, "fence", {}, Vector2i(256, 128))
-	var o: Vector2i = tn["origin"]
-	for t in _fence_tiles(tn):
-		var p := (Vector2(t) + Vector2(0.5, 0.5)) * TILE
-		var lt: Vector2i = t - o
-		var side: bool = (lt.x == -1 or lt.x == TownGen.COLS) and lt.y >= 0 and lt.y < TownGen.ROWS
-		_prop(tex, 0.95, _to3(p), PI * 0.5 if side else 0.0)
+	var o := Vector2(tn["origin"])
+	for f in tn["layout"]["fence"]:
+		var p: Vector2 = (o + (f["p"] as Vector2)) * TILE
+		_prop(tex, 0.95 if tn["layout"]["shape"] != "ring" else 1.9, _to3(p), float(f["rot"]))
 
 
 func _build_town_props(tn: Dictionary) -> void:
 	var o := Vector2(tn["origin"])
+	var L: Dictionary = tn["layout"]
 	var lamp_tex := Bake.make(bake_root, "lamp", {}, Vector2i(96, 320))
 	var crate := Bake.make(bake_root, "crate", {}, Vector2i(128, 128))
 	var barrel := Bake.make(bake_root, "barrel", {}, Vector2i(128, 160))
 	var flowers := Bake.make(bake_root, "flowers", {"cute": cute}, Vector2i(160, 120))
-	for x in TownGen.ROAD_X:
-		for ty in range(0, TownGen.ROWS, 4):
-			var p := (o + Vector2(x + 1.0, ty + 0.6)) * TILE + Vector2(-4.0, 0.0)
-			if astar.is_point_solid(_tile(p)):
-				continue
-			_billboard(lamp_tex, 2.6, _to3(p))
-			var l := OmniLight3D.new()
-			l.light_color = Color(1.0, 0.78, 0.45)
-			l.omni_range = 5.0
-			l.light_energy = 0.0
-			l.position = _to3(p) + Vector3(0, 2.4, 0)
-			add_child(l)
-			lamps.append(l)
+	var lamp_n := 0
+	for lp in L["lamps"]:
+		lamp_n += 1
+		if Game.low_end and lamp_n % 2 == 0:
+			continue
+		var p := (o + (lp as Vector2)) * TILE
+		if astar.is_point_solid(_tile(p)):
+			continue
+		_billboard(lamp_tex, 2.6, _to3(p))
+		var l := OmniLight3D.new()
+		l.light_color = Color(1.0, 0.78, 0.45)
+		l.omni_range = 5.0
+		l.light_energy = 0.0
+		l.position = _to3(p) + Vector3(0, 2.4, 0)
+		add_child(l)
+		lamps.append(l)
 	for b in buildings:
 		if not b["shop"] or b["city"] != tn["id"]:
 			continue
@@ -763,10 +929,72 @@ func _build_town_props(tn: Dictionary) -> void:
 		_billboard(crate if rng.randf() < 0.5 else barrel, 0.7, _to3(Vector2(r.position.x + 12.0, r.end.y + 8.0)))
 		_billboard(flowers, 0.6, _to3(Vector2(r.end.x - 14.0, r.end.y + 6.0)))
 	if tn["id"] == "sunny":
-		board_pos = (o + Vector2(TownGen.ROAD_X[0] + 1.0, TownGen.ROAD_Y[0] + 0.15)) * TILE + Vector2(30.0, 0.0)
+		board_pos = (o + (L["board"] as Vector2)) * TILE
 		_billboard(Bake.make(bake_root, "board", {}, Vector2i(256, 280)), 2.0, _to3(board_pos))
-	var well := (o + Vector2(TownGen.ROAD_X[1] + 1.0, TownGen.ROAD_Y[1] + 0.2)) * TILE + Vector2(30.0, 0.0)
+	var well := (o + (L["well"] as Vector2)) * TILE
 	_billboard(Bake.make(bake_root, "well", {}, Vector2i(220, 256)), 1.9, _to3(well))
+	_build_legend(tn)
+	_build_bridges(tn)
+
+
+## The local legend of a town: a landmark prop with a small name over it.
+func _build_legend(tn: Dictionary) -> void:
+	var td := TownGen.town_data(tn["id"])
+	var lg: Dictionary = td.get("legend", {})
+	if lg.is_empty():
+		return
+	var o := Vector2(tn["origin"])
+	var at := (o + (tn["layout"]["legend_pos"] as Vector2)) * TILE
+	tn["legend_px"] = at
+	var kind := String(lg.get("prop", "pillar"))
+	var tex: Texture2D
+	var hgt := 3.4
+	match kind:
+		"arch":
+			tex = Bake.make(bake_root, "arch", {}, Vector2i(320, 300))
+			hgt = 4.6
+		"deadtree":
+			tex = Bake.make(bake_root, "deadtree", {}, Vector2i(180, 280))
+			hgt = 5.2
+		_:
+			tex = Bake.make(bake_root, "pillar", {}, Vector2i(96, 288))
+			hgt = 3.8
+	_billboard(tex, hgt, _to3(at))
+	var lab := Label3D.new()
+	lab.text = String(lg["title"])
+	lab.font = font
+	lab.font_size = 48
+	lab.pixel_size = 0.0075
+	lab.outline_size = 12
+	lab.modulate = Color(0.20, 0.13, 0.08)
+	lab.outline_modulate = Color(0.96, 0.88, 0.70)
+	lab.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	lab.position = _to3(at) + Vector3(0, hgt + 0.45, 0)
+	add_child(lab)
+
+
+## Plank bridges where a road crosses a town river.
+func _build_bridges(tn: Dictionary) -> void:
+	var L: Dictionary = tn["layout"]
+	if L["bridges"].is_empty():
+		return
+	var o := Vector2(tn["origin"])
+	var span := (float(L["river_w"]) + 2.6) * 1.5
+	for br in L["bridges"]:
+		var cen: Vector2 = (o + (br["pos"] as Vector2)) * 1.5
+		var d: Vector2 = br["dir"]
+		var yaw := atan2(-d.y, d.x)
+		var root := Node3D.new()
+		root.position = Vector3(cen.x, 0.0, cen.y)
+		root.rotation.y = yaw
+		add_child(root)
+		var plank := _card(null, Color(0.74, 0.56, 0.36), Vector2.ONE)
+		var rail := _card(null, Color(0.50, 0.36, 0.22), Vector2.ONE)
+		_mesh(_box(Vector3(span, 0.16, 1.7)), plank, Vector3(0, 0.1, 0), root)
+		for sgn in [-1.0, 1.0]:
+			_mesh(_box(Vector3(span, 0.12, 0.1)), rail, Vector3(0, 0.62, sgn * 0.85), root)
+			for k in 6:
+				_mesh(_box(Vector3(0.12, 0.6, 0.12)), rail, Vector3(-span * 0.5 + 0.2 + k * (span - 0.4) / 5.0, 0.38, sgn * 0.85), root)
 
 
 func _build_landmarks() -> void:
@@ -848,7 +1076,7 @@ func _add_gather(good: String, p: Vector2) -> void:
 
 func _build_clouds() -> void:
 	var cloud_tex := Bake.make(bake_root, "cloud", {}, Vector2i(256, 150))
-	for i in 14:
+	for i in (6 if Game.low_end else 14):
 		var cl := Standee.make_sprite(cloud_tex, rng.randf_range(0.05, 0.09))
 		cl.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 		cl.shaded = false
@@ -856,6 +1084,44 @@ func _build_clouds() -> void:
 		cl.position = Vector3(rng.randf_range(-150, 170), rng.randf_range(32, 48), rng.randf_range(-150, 160))
 		add_child(cl)
 		clouds.append(cl)
+
+
+## The hero's look from the character screen (a default hero until it is made).
+## A front-facing picture of a hero draft for the character creator.
+func hero_preview(h: Dictionary) -> Texture2D:
+	var look := hero_look(h)
+	var d: Dictionary
+	if cute:
+		d = Bake.make_rig(bake_root, "chibi_front", look, Vector2i(208, 260))
+	else:
+		d = Bake.make_rig(bake_root, "person", look, Vector2i(256, 320))
+	return d["tex"]
+
+
+func hero_look(draft: Dictionary = {}) -> Dictionary:
+	var h: Dictionary = draft if not draft.is_empty() else Game.hero
+	var cloth: Color = HudMenus.HERO_CLOTHS[int(h["cloth"]) % HudMenus.HERO_CLOTHS.size()]
+	var look := {"skin": HudMenus.HERO_SKINS[int(h["skin"]) % HudMenus.HERO_SKINS.size()], "hair": HudMenus.HERO_HAIRS[int(h["hair"]) % HudMenus.HERO_HAIRS.size()],
+		"cloth": cloth, "pants": Color(0.26, 0.24, 0.26), "weapon": "axe", "eyes": "tall", "brows": "dash", "chin": 0.22}
+	match int(h["hat"]):
+		0:
+			look["hat"] = "spiky"
+		1:
+			look["hat"] = "short"
+		2:
+			look["helm"] = "hood"
+			look["hat_col"] = cloth.darkened(0.1)
+	return look
+
+
+## Called when the character creator finishes: new look, new stats.
+func apply_hero() -> void:
+	var old := player_view
+	player_view = _make_standee(_bake_person(hero_look(), Vector2i(256, 320)), 1.75 if cute else 2.3, String(Game.hero["name"]))
+	player_view.show_hp = false
+	if old != null:
+		old.queue_free()
+	career.apply_stats(self, true)
 
 
 func _make_standee(baked: Dictionary, h: float, label: String) -> Standee:
@@ -942,10 +1208,18 @@ func _populate(tn: Dictionary) -> void:
 		return
 	tn["populated"] = true
 	var houses: Array = buildings.filter(func(b): return b["kind"] == "house" and b["city"] == tn["id"])
+	if houses.size() < 4:
+		# crowded towns put some people up above the shops
+		for b2 in buildings:
+			if b2["city"] == tn["id"] and b2["kind"] in ["inn", "bakery", "tavern", "market", "weaver", "lapidary"] and houses.size() < 4:
+				houses.append(b2)
 	var workplaces: Array = buildings.filter(func(b): return KINDS[b["kind"]]["job"] != "" and b["city"] == tn["id"])
 	for w in workplaces:
 		_spawn_npc(w, houses, tn)
-	for i in int(tn["population"]):
+	var extra := int(tn["population"])
+	if Game.low_end:
+		extra = int(ceil(extra * 0.5))
+	for i in extra:
 		_spawn_npc({}, houses, tn)
 
 
@@ -958,7 +1232,8 @@ func _wake_towns() -> void:
 
 
 func _spawn_npc(work: Dictionary, houses: Array, tn: Dictionary) -> void:
-	var idx := npcs.size()
+	var idx := _npc_seq
+	_npc_seq += 1
 	var home: Dictionary = houses[(idx + 3 * hash(tn["id"])) % houses.size()]
 	var n := Npc.new()
 	n.id = "npc_%d" % idx
@@ -1006,7 +1281,25 @@ func _spawn_npc(work: Dictionary, houses: Array, tn: Dictionary) -> void:
 	npcs.append(n)
 
 
+## Flat monster art as a one-piece rig: the cardboard-ized sprite on a single joint.
+func _sprite_rig(kind: String) -> Dictionary:
+	var key := "spr_" + kind
+	if not rig_cache.has(key):
+		var t: Dictionary = Monster.TYPES[kind]
+		var tex: Texture2D = load("res://assets/beasts/" + String(t["sprite"]))
+		if tex == null:
+			var img := Image.load_from_file("res://assets/beasts/" + String(t["sprite"]))
+			tex = ImageTexture.create_from_image(img) if img != null else null
+		var sz := tex.get_size() if tex != null else Vector2(64, 64)
+		var rig := {"kind": "sprite", "col": sz, "flip": -1.0 if t.get("face", "front") == "left" else 1.0,
+			"parts": [{"name": "body", "pivot": Vector2(sz.x * 0.5, sz.y), "z": 0}]}
+		rig_cache[key] = {"tex": tex, "rig": rig}
+	return rig_cache[key]
+
+
 func _monster_tex(kind: String) -> Dictionary:
+	if Monster.is_sprite(kind):
+		return _sprite_rig(kind)
 	var rk := Monster.rig_kind(kind, cute)
 	if not rig_cache.has(rk):
 		var sizes := {"wolf": Vector2i(320, 224), "troll": Vector2i(288, 352), "fluffox": Vector2i(320, 240),
@@ -1019,12 +1312,14 @@ func _monster_tex(kind: String) -> Dictionary:
 func _add_monster(kind: String, p: Vector2, tier := 0) -> Monster:
 	var m := Monster.new()
 	m.setup(kind, cute, tier)
+	m.hp *= story.monster_mult()
+	m.max_hp = m.hp
 	m.pos = p
 	m.home = p
 	m.view = _make_standee(_monster_tex(kind), Monster.height_of(kind, cute) * m.size_mult(), m.display_name)
 	m.view.charges = m.ranged > 0.0 or m.pounce_range > 0.0
-	m.view.base_tint = Monster.TIER_TINT[m.tier] if kind != "boss" else Color(1, 1, 1)
-	if m.tier >= 2 and kind != "boss":
+	m.view.base_tint = Monster.TIER_TINT[m.tier] if not Monster.is_big(kind) else Color(1, 1, 1)
+	if m.tier >= 2 and not Monster.is_big(kind):
 		Fx.aura(m.view, Color(1.0, 0.25, 0.2), 0.8)
 	m.view.position = _to3(p)
 	m.view.scale = Vector3(1, 0.05, 1)
@@ -1097,6 +1392,13 @@ func _region_kinds(p: Vector2, tier := 0) -> Array:
 	if tier >= 2:
 		kinds.append("troll")
 		kinds.append("bat")
+	# sprite beasts join the mix near their home landmark
+	if bd < 1100.0:
+		for k in Monster.TYPES:
+			var t: Dictionary = Monster.TYPES[k]
+			if t.has("regions") and not t.get("boss", false) and best in t["regions"] and int(t.get("min_tier", 0)) <= tier:
+				kinds.append(k)
+				kinds.append(k)
 	if night:
 		kinds.append("bat")
 	return kinds
@@ -1135,6 +1437,26 @@ func _seed_danger_zones() -> void:
 		for e in plan[id]:
 			var p := _free_spot_near(c + Vector2(rng.randf_range(-260, 260), rng.randf_range(-260, 260)))
 			_add_monster(e[0], p, e[1])
+
+
+## A rare dragon settles in one of the wild places: a single big fight, announced.
+func _spawn_dragon() -> void:
+	for m in monsters:
+		if Monster.is_big(m.kind) and m.kind != "boss":
+			return
+	var kinds: Array = []
+	for k in Monster.TYPES:
+		if Monster.TYPES[k].get("rare", false):
+			kinds.append(k)
+	var kind: String = kinds[rng.randi() % kinds.size()]
+	var lm: String = String(Monster.TYPES[kind]["regions"][0])
+	if world.landmark(lm).is_empty():
+		return
+	var c: Vector2 = world.landmark(lm)["pos"]
+	var m := _add_monster(kind, _free_spot_near(c + Vector2(rng.randf_range(-200, 200), rng.randf_range(-200, 200))))
+	m.aggro = float(Monster.TYPES[kind]["aggro"])
+	hud.banner("A dragon stirs", "%s near %s" % [m.display_name, String(world.landmark(lm).get("name", lm))])
+	Economy.message.emit("A %s has been seen near %s. Only the bold (and level 5 or more) should go." % [m.display_name, String(world.landmark(lm).get("name", lm))])
 
 
 func _spawn_boss() -> void:
@@ -1188,17 +1510,21 @@ func door_of(id: String) -> Vector2:
 	var b := building(id)
 	if b.is_empty():
 		var n := npc_by_id(id)
+		if n == null:
+			for m in npcs:
+				if m is Merchant and m.cart_id == id:
+					return m.pos
 		return n.pos if n != null else start_pos
 	return b["door"]
 
 
 func random_road_point(city := "sunny") -> Vector2:
-	var o := Vector2(town_by_id(city).get("origin", Vector2i.ZERO))
-	if rng.randf() < 0.5:
-		var x: int = TownGen.ROAD_X[rng.randi() % TownGen.ROAD_X.size()]
-		return (o + Vector2(x, rng.randi_range(0, TownGen.ROWS - 1)) + Vector2(0.5, 0.5)) * TILE
-	var y: int = TownGen.ROAD_Y[rng.randi() % TownGen.ROAD_Y.size()]
-	return (o + Vector2(rng.randi_range(0, TownGen.COLS - 1), y) + Vector2(0.5, 0.5)) * TILE
+	var tn := town_by_id(city)
+	var o := Vector2(tn.get("origin", Vector2i.ZERO))
+	var pts: Array = tn["layout"]["points"] if tn.has("layout") else []
+	if pts.is_empty():
+		return start_pos
+	return (o + (pts[rng.randi() % pts.size()] as Vector2)) * TILE
 
 
 func find_path(a: Vector2, b: Vector2) -> PackedVector2Array:
@@ -1247,6 +1573,18 @@ func nearest_shop_with(p: Vector2, good: String) -> String:
 			bd = d
 			best = b["id"]
 	return best
+
+
+## Relief: a hungry person with no money gets the price of a meal from the city
+## treasury (a real transfer, so coins stay conserved). Returns true if they can now buy.
+func food_relief(n: Npc, shop: String, good: String) -> bool:
+	var tre := _guard_post_id(n.city)
+	if tre == "player" or not Economy.wallets.has(tre):
+		return false
+	var price := Economy.buy_price(shop, good)
+	if int(Economy.wallets[tre]["coins"]) < price + 5:
+		return false
+	return Economy.pay(tre, n.id, price)
 
 
 func nearest_food(p: Vector2) -> Array:
@@ -1301,7 +1639,7 @@ func _shop_of_kind(kind: String, city := "sunny") -> String:
 
 
 func player_safe() -> bool:
-	return not Game.started or dialog_npc != null
+	return not Game.started or dialog_npc != null or bool(player.get("down", false))
 
 
 func monster_name(kind: String, plural: bool) -> String:
@@ -1367,7 +1705,7 @@ func _newcomer() -> void:
 	var houses: Array = buildings.filter(func(b): return b["kind"] == "house" and b["city"] == "sunny")
 	_spawn_npc({}, houses, tn)
 	var n: Npc = npcs[npcs.size() - 1]
-	n.pos = Vector2((TownGen.ROAD_X[1] + 0.5) * TILE, (TownGen.ROWS + 1.5) * TILE)
+	n.pos = (Vector2(tn["origin"]) + (tn["layout"]["gates"]["s2"] as Vector2)) * TILE + Vector2(0, -40)
 	Economy.pay(treasury, n.id, mini(20, int(Economy.wallets[treasury]["coins"])))
 	n.say("Hello. I hear there is work here.")
 	Economy.message.emit("%s arrived at the south gate looking for work." % n.display_name)
@@ -1433,12 +1771,19 @@ func monster_strike(m: Monster) -> void:
 			Fx.ring(self, _to3(m.pos), Color(0.6, 0.9, 0.4), 5.0)
 			shake = maxf(shake, 0.6)
 			sfx("boom")
+		"dragon_red", "dragon_blue", "dragon_green":
+			var dc: Color = Monster.BEAM_COL.get(m.kind, Color(1, 0.6, 0.3))
+			Fx.slam(self, _to3(m.pos), 4.0, dc)
+			Fx.ring(self, _to3(m.pos), dc, 5.0)
+			shake = maxf(shake, 0.6)
+			sfx("boom")
 		"shroom":
 			Fx.spores(self, _to3(m.pos), 1.8)
 		_:
 			Fx.impact(self, tp, Color(0.7, 1.0, 0.6), 0.8)
 	if m.target_is_player:
 		if m.pos.distance_to(player["pos"]) <= m.reach * 1.4:
+			player["hurt_by"] = m.display_name
 			hurt_player(m.dmg, m.pos)
 	elif m.target_npc != null and npcs.has(m.target_npc) and not m.target_npc.inside:
 		if m.pos.distance_to(m.target_npc.pos) <= m.reach * 1.4:
@@ -1486,6 +1831,7 @@ func monster_beam(m: Monster) -> void:
 	m.view.lunge()
 	var width := 40.0 if m.kind == "bat" else 62.0
 	if _seg_dist(player["pos"], m.pos, end) < width:
+		player["hurt_by"] = m.display_name
 		hurt_player(m.dmg, m.pos)
 	for n in npcs:
 		if not n.inside and _seg_dist(n.pos, m.pos, end) < width:
@@ -1506,7 +1852,7 @@ func _damage_monster(m: Monster, dmg: float, killer: String, from: Vector2, step
 	if killer == "player":
 		# a hit can interrupt: heavier hits stagger longer, big beasts shrug it off
 		var st := 0.16 + 0.17 * step
-		if m.kind == "boss":
+		if Monster.is_big(m.kind):
 			st = 0.25 if step == 2 else 0.0
 		elif m.tier >= 2:
 			st *= 0.6
@@ -1525,6 +1871,8 @@ func _damage_monster(m: Monster, dmg: float, killer: String, from: Vector2, step
 	Fx.sparks(self, at, Color(1.0, 0.9, 0.6), 6 + step * 4, 4.0 + step)
 	_pop_number(at, str(int(dmg)) + ("!" if crit else ""), Color(1.0, 0.86, 0.35) if not crit else Color(1.0, 0.55, 0.2))
 	sfx("hit")
+	if crit and killer == "player":
+		hud.rip("crit", "CRITICAL!", "", Color(1.0, 0.55, 0.2))
 	if killer == "player":
 		shake = maxf(shake, 0.2 + 0.1 * step + (0.1 if crit else 0.0))
 		fov_kick = maxf(fov_kick, 2.0 + 2.5 * step)
@@ -1550,20 +1898,54 @@ func hurt_player(dmg: float, from: Vector2) -> void:
 	shake = maxf(shake, 0.55)
 	_hitstop(0.07)
 	if float(player["hp"]) <= 0.0:
-		var w: Dictionary = Economy.wallets["player"]
-		var lost := int(w["coins"]) / 2
-		if lost > 0:
-			Economy.pay("player", _guard_post_id(), lost)
-		player["hp"] = player["max_hp"]
-		player["knock"] = Vector2.ZERO
-		hud.fade_through(_teleport.bind(start_pos))
-		Economy.message.emit("You were knocked out. The guards hauled you home and kept %d coins as a fee." % lost)
+		_knock_out()
+
+
+## The "knocked out" scene: the screen tears, a card says what happened, what
+## it cost and where you wake up. Nothing moves until you press Get up.
+func _knock_out() -> void:
+	if player.get("down", false):
+		return
+	player["down"] = true
+	player["knock"] = Vector2.ZERO
+	player["hp"] = 0.0
+	var by := str(player.get("hurt_by", "something nasty"))
+	var tn := _nearest_town_dict(player["pos"])
+	var city: String = tn.get("id", "sunny")
+	var lost := int(Economy.wallets["player"]["coins"]) / 2
+	var tre := _guard_post_id(city)
+	if lost <= 0 or tre == "player" or not Economy.pay("player", tre, lost):
+		lost = 0
+	var spawn: Vector2 = tn.get("start", start_pos)
+	var info := {"by": by, "lost": lost, "town": String(Economy.city_def(city).get("name", "town"))}
+	hud.rip("death", "KNOCKED OUT", "by %s" % by, Color(0.85, 0.3, 0.25))
+	hud.show_death(info, func() -> void:
+		hud.fade_through(func() -> void:
+			player["pos"] = _free_spot_near(spawn)
+			cam_focus = _to3(player["pos"])
+			player["hp"] = player["max_hp"]
+			player["stamina"] = player["max_stamina"]
+			player["down"] = false
+			player["grace"] = 2.0
+			player["hurt_by"] = ""))
+	Economy.message.emit("You were knocked out by %s. The guards of %s kept %d coins as a fee." % [by, info["town"], lost])
+
+
+func _nearest_town_dict(p: Vector2) -> Dictionary:
+	var best: Dictionary = {}
+	var bd := INF
+	for tn in towns:
+		var d: float = p.distance_to(tn["start"])
+		if d < bd:
+			bd = d
+			best = tn
+	return best
 
 
 func _perfect_dodge() -> void:
 	player["perfected"] = true
-	player["stamina"] = minf(100.0, float(player["stamina"]) + 25.0)
-	player["ink"] = minf(100.0, float(player["ink"]) + 30.0)
+	player["stamina"] = minf(float(player["max_stamina"]), float(player["stamina"]) + 25.0)
+	player["ink"] = minf(float(player["max_ink"]), float(player["ink"]) + 30.0)
 	var at := _to3(player["pos"])
 	Fx.ring(self, at, Color(0.6, 0.9, 1.0), 2.4)
 	Fx.sparks(self, at + Vector3(0, 1.0, 0), Color(0.7, 0.95, 1.0), 12, 5.0)
@@ -1639,10 +2021,15 @@ func _pop_star(at: Vector3) -> void:
 
 func player_trade(shop: String, good: String, buying: bool, qty: int = 1) -> int:
 	var done := 0
+	if career.refuses(self, shop):
+		Economy.message.emit("The %s will not deal with you after what you did. Give it a day or two." % Economy.shops[shop]["name"])
+		return 0
 	for i in qty:
+		var price: int = Economy.buy_price(shop, good) if buying else Economy.sell_price(shop, good)
 		var ok: bool = Economy.buy(shop, good, "player") if buying else Economy.sell(shop, good, "player")
 		if not ok:
 			break
+		career.on_trade(self, good, price, buying)
 		done += 1
 	var gname: String = Economy.GOODS[good]["name"]
 	if done > 0:
@@ -1665,6 +2052,7 @@ func quest_done(q: Dictionary) -> void:
 	Fx.burst(self, _to3(player["pos"]) + Vector3(0, 2.0, 0), [Color(1, 0.85, 0.3), Color(0.95, 0.45, 0.55), Color(0.5, 0.8, 0.95), Color(1, 1, 1)], 40, 6.0)
 	Fx.ring(self, _to3(player["pos"]), Color(1, 0.9, 0.4), 4.0)
 	hud.banner("Quest complete", "%s   +%d coins" % [q["title"], int(q["reward"])])
+	career.on_quest(self, q)
 	quests.refresh(self)
 
 
@@ -1684,27 +2072,35 @@ func _unhandled_input(ev: InputEvent) -> void:
 		cam_pitch = clampf(cam_pitch + ev.relative.y * 0.004, 0.18, 1.15)
 	elif ev is InputEventMouseButton and ev.pressed:
 		if ev.button_index == MOUSE_BUTTON_WHEEL_UP:
-			cam_dist = clampf(cam_dist - 0.8, 6.0, 24.0)
+			cam_dist = clampf(cam_dist - 0.8, 6.0, 90.0 if _arg_value("--cam=") != "" else 24.0)
 		elif ev.button_index == MOUSE_BUTTON_WHEEL_DOWN:
 			cam_dist = clampf(cam_dist + 0.8, 6.0, 24.0)
 
 
 func _process(delta: float) -> void:
+	Sfx.listener = cam_focus
 	if not ready_done:
+		return
+	if hud.paused:
+		hud.refresh(self, 0.0)
 		return
 	clock += delta
 	var prev_hour := hour
 	hour = fposmod(6.0 + fposmod(clock, DAY_SECONDS) / DAY_SECONDS * 24.0, 24.0)
 	if prev_hour < 17.0 and hour >= 17.0:
 		_pay_wages()
+		career.payday(self)
 	if prev_hour < 7.0 and hour >= 7.0:
 		_newcomer()
+		_hire_guards()
 		quests.refresh(self)
 	if prev_hour < 5.0 and hour >= 5.0:
+		career.new_day()
 		for n in npcs:
 			n.worked_today = false
 			n.day_job = ""
 	if prev_hour > hour:
+		_roll_events()
 		Chain.end_of_day(day_number() - 1)
 		if _arg_value("--report=") != "":
 			print("---- end of day %d ----" % (day_number() - 1))
@@ -1714,6 +2110,7 @@ func _process(delta: float) -> void:
 
 	if Game.started:
 		_update_player(delta)
+		career.update(self, delta)
 	for m in monsters:
 		m.update(delta, self)
 	for n in npcs:
@@ -1735,13 +2132,30 @@ func _process(delta: float) -> void:
 	if spawn_timer >= 5.0:
 		spawn_timer = 0.0
 		_cull_monsters()
-		if monsters.size() < MAX_MONSTERS:
+		if monsters.size() < (MAX_MONSTERS * 6 / 10 if Game.low_end else MAX_MONSTERS):
 			_spawn_monster_near()
 	if boss_timer > 0.0:
 		boss_timer -= delta
 		if boss_timer <= 0.0:
 			_spawn_boss()
 	_chatter(delta)
+	_update_allies(delta)
+	_update_burning(delta)
+	_met_t -= delta
+	if _met_t <= 0.0:
+		_met_t = 0.8
+		for mm in monsters:
+			if mm.pos.distance_to(player["pos"]) < 520.0:
+				var e: Dictionary = bestiary.get(mm.kind, {"seen": 0, "kills": 0, "best_tier": 0})
+				if int(e["seen"]) == 0:
+					Economy.message.emit("Bestiary: new entry, %s. Press B." % Monster.name_of(mm.kind, cute))
+				e["seen"] = int(e["seen"]) + 1
+				e["best_tier"] = maxi(int(e["best_tier"]), mm.tier)
+				bestiary[mm.kind] = e
+	_event_timer -= delta
+	if _event_timer <= 0.0:
+		_event_timer = 7.0
+		_event_chatter()
 
 	_find_nearby()
 	_update_camera(delta)
@@ -1771,6 +2185,11 @@ func _process(delta: float) -> void:
 			get_tree().quit()
 
 
+## What the prompt calls the use button.
+func _use_key() -> String:
+	return "Tap the bubble:" if Game.touch else "E"
+
+
 func _cam_right() -> Vector2:
 	return Vector2(cos(cam_yaw), -sin(cam_yaw))
 
@@ -1780,6 +2199,9 @@ func _cam_forward() -> Vector2:
 
 
 func _update_player(delta: float) -> void:
+	if player.get("down", false):
+		player["moving"] = 0.0
+		return
 	var busy := hud.blocking()
 	var dir := Vector2.ZERO if busy else Input.get_vector("move_left", "move_right", "move_up", "move_down")
 	var move := _cam_right() * dir.x + _cam_forward() * (-dir.y)
@@ -1797,11 +2219,11 @@ func _update_player(delta: float) -> void:
 			player["tired"] = true
 			Fx.puff(self, _to3(player["pos"]), 0.7, Color(0.95, 0.9, 0.8))
 	else:
-		st = minf(100.0, st + delta * (10.0 if want_sprint else 20.0))
+		st = minf(float(player["max_stamina"]), st + delta * (10.0 if want_sprint else 20.0))
 	player["stamina"] = st
 	if move.length() > 0.05:
 		player["heading"] = move.normalized()
-	var spd := PLAYER_SPEED * (1.6 if player["sprint"] else 1.0)
+	var spd := PLAYER_SPEED * (1.6 if player["sprint"] else 1.0) * (1.0 + 0.03 * (Game.stat("swift") - 1) + skills.bonus("speed"))
 	var knock: Vector2 = player["knock"]
 	player["move_dir"] = move.normalized() if move.length() > 0.05 else Vector2.ZERO
 	if float(player["dash_t"]) > 0.0:
@@ -1825,7 +2247,8 @@ func _update_player(delta: float) -> void:
 	player["cool"] = maxf(0.0, float(player["cool"]) - delta)
 	player["beam_cool"] = maxf(0.0, float(player["beam_cool"]) - delta)
 	player["dragon_cool"] = maxf(0.0, float(player.get("dragon_cool", 0.0)) - delta)
-	player["ink"] = minf(100.0, float(player["ink"]) + delta * 9.0)
+	player["ink"] = minf(float(player["max_ink"]), float(player["ink"]) + delta * (9.0 + 1.5 * (Game.stat("spirit") - 1) + skills.bonus("ink") * 0.08))
+	skills.tick(delta)
 	if clock - float(player["last_hurt"]) > 5.0:
 		player["hp"] = minf(float(player["max_hp"]), float(player["hp"]) + delta * 1.5)
 	var cam_turn := Input.get_axis("cam_right", "cam_left")
@@ -1833,8 +2256,11 @@ func _update_player(delta: float) -> void:
 
 	_update_jump(delta, busy)
 	if Input.is_action_just_pressed("cancel"):
+		var anything: bool = hud.blocking_overlay() or dialog_npc != null or hud.ledger_panel.visible
 		hud.close_all()
 		_close_dialog()
+		if not anything:
+			hud.toggle_pause()
 	if dialog_npc != null:
 		var dn := dialog_npc
 		if not npcs.has(dn) or dn.inside or dn.pos.distance_to(player["pos"]) > 260.0 or not hud.dialog_panel.visible:
@@ -1852,9 +2278,16 @@ func _update_player(delta: float) -> void:
 	if Input.is_action_just_pressed("dodge"):
 		_player_dodge()
 	if Input.is_action_just_pressed("beam"):
-		_player_beam()
+		cast("greater_blast" if skills.has("greater_blast") else "blast")
 	if Input.is_action_just_pressed("dragon"):
-		_player_dragon()
+		cast("dragon")
+	for i in 6:
+		if Input.is_action_just_pressed("skill_%d" % (i + 1)):
+			var act: Array = skills.actives()
+			if i < act.size():
+				cast(String(act[i]))
+	if Input.is_action_just_pressed("skills"):
+		hud.toggle_skills()
 	if Input.is_action_just_pressed("interact"):
 		_interact()
 	if Input.is_action_just_pressed("eat"):
@@ -1867,6 +2300,8 @@ func _update_player(delta: float) -> void:
 		hud.toggle_map()
 	if Input.is_action_just_pressed("quests"):
 		hud.toggle_quests()
+	if Input.is_action_just_pressed("bestiary"):
+		hud.toggle_bestiary()
 
 
 ## Space hops: stretch on take-off, squash and a ring of dust on landing.
@@ -1912,8 +2347,16 @@ func _squash(to: Vector3, secs: float) -> void:
 func _interact() -> void:
 	if nearby_gather >= 0:
 		_gather(nearby_gather)
+	elif nearby_temple != "":
+		_pray(nearby_temple)
 	elif nearby_shop != "":
 		if quests.hand_in(self, nearby_shop):
+			return
+		if building(nearby_shop)["kind"] == "exchange":
+			hud.open_prices(nearby_shop)
+			return
+		if career.refuses(self, nearby_shop):
+			Economy.message.emit("The %s will not trade with you today." % building(nearby_shop)["name"])
 			return
 		hud.open_shop(nearby_shop)
 	elif nearby_npc != null:
@@ -1921,6 +2364,27 @@ func _interact() -> void:
 	elif near_board:
 		quests.refresh(self)
 		hud.open_board()
+
+
+const TEMPLE_FEE := 6
+
+
+## The shrine heals for a small offering; the coins are the shrine's real income.
+func _pray(temple: String) -> void:
+	if float(player["hp"]) >= float(player["max_hp"]) - 1.0:
+		Economy.message.emit("You are whole already. The shrine keeps its blessing for later.")
+		return
+	if not Economy.pay("player", temple, TEMPLE_FEE):
+		Economy.message.emit("The shrine asks %d coins for a blessing. You do not have them." % TEMPLE_FEE)
+		return
+	player["hp"] = player["max_hp"]
+	player["stamina"] = player["max_stamina"]
+	player["ink"] = player["max_ink"]
+	sfx("quest")
+	Fx.ring(self, _to3(player["pos"]), Color(0.7, 1.0, 0.8), 3.0)
+	Fx.sparks(self, _to3(player["pos"]) + Vector3(0, 1.0, 0), Color(0.8, 1.0, 0.85), 14, 4.0)
+	_pop_number(_to3(player["pos"]) + Vector3(0, 2.0, 0), "Healed", Color(0.7, 1.0, 0.8))
+	Economy.message.emit("The shrine heals you for %d coins." % TEMPLE_FEE)
 
 
 func _gather(i: int) -> void:
@@ -1984,16 +2448,16 @@ func _player_attack() -> void:
 
 func _apply_player_hit(step: int) -> void:
 	var has_blade: bool = int(Economy.wallets["player"]["items"].get("blade", 0)) > 0
-	var base: float = (20.0 if has_blade else 12.0) * [1.0, 1.1, 1.9][step]
+	var base: float = (20.0 if has_blade else 12.0) * [1.0, 1.1, 1.9][step] * career.damage_mult()
 	var p: Vector2 = player["pos"]
 	var hd: Vector2 = player["heading"]
 	var hit := false
 	for m in monsters.duplicate():
 		var d: Vector2 = m.pos - p
-		var reach: float = [108.0, 112.0, 128.0][step] + (40.0 if m.kind == "boss" else 0.0) + 12.0 * m.size_mult()
+		var reach: float = [108.0, 112.0, 128.0][step] + (40.0 if Monster.is_big(m.kind) else 0.0) + 12.0 * m.size_mult()
 		var arc_ok := d.length() < 38.0 or d.normalized().dot(hd) > (0.0 if step < 2 else -0.3)
 		if d.length() < reach and arc_ok:
-			var crit := rng.randf() < 0.15
+			var crit := rng.randf() < 0.12 + 0.02 * Game.stat("luck")
 			_damage_monster(m, base * (1.6 if crit else 1.0), "player", p, step, crit)
 			hit = true
 	if hit:
@@ -2002,6 +2466,12 @@ func _apply_player_hit(step: int) -> void:
 	else:
 		_chop_tree(p, hd, step)
 	if step == 2:
+		# the heavy third swing can catch a townsperson standing in front of you
+		for n in npcs.duplicate():
+			if not n.inside and n.pos.distance_to(p + hd * 70.0) < 52.0:
+				hurt_npc(n, 6.0, p)
+				career.on_assault(self, n)
+				Economy.message.emit("You hit %s! Watch where you swing." % n.display_name)
 		var at := _to3(p + hd * 70.0)
 		Fx.slam(self, at, 1.7, Color(1.0, 0.85, 0.5))
 		shake = maxf(shake, 0.35)
@@ -2126,41 +2596,262 @@ func _update_target_ring() -> void:
 	target_ring_node.visible = aim_target != null
 	if aim_target != null:
 		target_ring_node.position = Bend.at(_to3(aim_target.pos))
-		target_ring_node.scale = Vector3.ONE * (0.8 + aim_target.size_mult() * 0.5 + (0.9 if aim_target.kind == "boss" else 0.0))
+		target_ring_node.scale = Vector3.ONE * (0.8 + aim_target.size_mult() * 0.5 + (0.9 if Monster.is_big(aim_target.kind) else 0.0))
 
 
-func _player_beam() -> void:
-	if float(player["beam_cool"]) > 0.0 or float(player["ink"]) < 30.0:
-		if float(player["ink"]) < 30.0:
-			player_view.say("Out of ink.", 1.0)
+## True (and the cost is paid) when a learned skill can be cast right now.
+func _pay_skill(id: String) -> bool:
+	var sk := skills.def(id)
+	if sk.is_empty() or not skills.has(id):
+		if id == "blast" or id == "greater_blast":
+			player_view.say("I have not learned that yet. (T)", 1.4)
+		return false
+	if float(skills.cool.get(id, 0.0)) > 0.0:
+		return false
+	if sk.has("ink") and float(player["ink"]) < float(sk["ink"]):
+		player_view.say("Out of ink.", 1.0)
+		return false
+	if sk.has("stamina") and float(player["stamina"]) < float(sk["stamina"]):
+		player_view.say("Too tired.", 1.0)
+		return false
+	if sk.has("ink"):
+		player["ink"] = float(player["ink"]) - float(sk["ink"])
+	if sk.has("stamina"):
+		player["stamina"] = float(player["stamina"]) - float(sk["stamina"])
+	skills.cool[id] = float(sk.get("cool", 1.0))
+	return true
+
+
+func cast(id: String) -> void:
+	if not Game.started or player.get("down", false) or hud.blocking():
 		return
-	player["ink"] = float(player["ink"]) - 30.0
-	player["beam_cool"] = 0.6
+	match id:
+		"blast", "greater_blast":
+			_cast_blast(id)
+		"flame":
+			_cast_flame(id)
+		"inferno":
+			_cast_inferno(id)
+		"whirl":
+			_cast_whirl(id)
+		"mend", "major_mend":
+			_cast_mend(id)
+		"summon", "major_summon":
+			_cast_summon(id)
+		"dragon":
+			_player_dragon()
+
+
+func _cast_blast(id: String) -> void:
+	if not _pay_skill(id):
+		return
+	var sk := skills.def(id)
 	Sfx.play("beam")
 	player_view.lunge()
 	var p: Vector2 = player["pos"]
 	var hd: Vector2 = player["heading"]
-	var end := p + hd * 300.0
+	var end := p + hd * float(sk["range"])
 	var col := Color(1.0, 0.55, 0.8) if cute else Color(0.55, 0.8, 1.0)
 	var h0 := 1.0 if cute else 1.3
-	Fx.beam(self, _to3(p) + Vector3(0, h0, 0) + Vector3(hd.x, 0, hd.y) * 0.5, _to3(end) + Vector3(0, h0, 0), col, 0.32)
+	var big := id == "greater_blast"
+	Fx.beam(self, _to3(p) + Vector3(0, h0, 0) + Vector3(hd.x, 0, hd.y) * 0.5, _to3(end) + Vector3(0, h0, 0), col, 0.5 if big else 0.32)
 	sfx("boom")
-	shake = maxf(shake, 0.3)
+	shake = maxf(shake, 0.5 if big else 0.3)
+	hud.rip("blast", "GREATER BLAST!" if big else "INK BLAST!", "", Color(1.0, 0.45, 0.7) if cute else Color(0.45, 0.7, 1.0))
+	for m in monsters.duplicate():
+		if _seg_dist(m.pos, p, end) < float(sk["width"]):
+			_damage_monster(m, float(sk["dmg"]) * career.damage_mult(), "player", p, 1 if big else 0)
+
+
+## The nearest monster roughly in front of the player, or null.
+func _front_target(reach: float) -> Monster:
+	var p: Vector2 = player["pos"]
+	var hd: Vector2 = player["heading"]
+	var best: Monster = null
+	var bd := reach
 	for m in monsters:
-		if _seg_dist(m.pos, p, end) < 46.0:
-			_damage_monster(m, 26.0, "player", p)
+		var d: Vector2 = m.pos - p
+		if d.length() < bd and (d.normalized().dot(hd) > 0.3 or d.length() < 90.0):
+			bd = d.length()
+			best = m
+	return best
+
+
+func _ignite(m: Monster, secs: float) -> void:
+	if not is_instance_valid(m) or not is_instance_valid(m.view):
+		return
+	if burning.has(m):
+		burning[m]["t"] = maxf(float(burning[m]["t"]), secs)
+		return
+	var fx := FireFx.burning(m.view, Vector3(0, Monster.height_of(m.kind, cute) * m.size_mult() * 0.45, 0), 1.0)
+	burning[m] = {"t": secs, "tick": 0.0, "fx": fx}
+
+
+func _update_burning(delta: float) -> void:
+	for m in burning.keys():
+		var b: Dictionary = burning[m]
+		if not is_instance_valid(m) or not monsters.has(m) or float(m.hp) <= 0.0:
+			if is_instance_valid(b["fx"]):
+				b["fx"].queue_free()
+			burning.erase(m)
+			continue
+		b["t"] = float(b["t"]) - delta
+		b["tick"] = float(b["tick"]) + delta
+		if float(b["tick"]) >= 0.6:
+			b["tick"] = 0.0
+			var dmg := 4.0 * career.damage_mult()
+			m.hp -= dmg
+			m.killer_id = "player"
+			m.view.flash()
+			_pop_number(_to3(m.pos) + Vector3(0, Monster.height_of(m.kind, cute) * m.size_mult() * 0.8, 0), str(int(dmg)), Color(1.0, 0.55, 0.2))
+		if float(b["t"]) <= 0.0:
+			if is_instance_valid(b["fx"]):
+				b["fx"].queue_free()
+			burning.erase(m)
+
+
+func _cast_flame(id: String) -> void:
+	if not _pay_skill(id):
+		return
+	var sk := skills.def(id)
+	Sfx.play("fire")
+	player_view.lunge()
+	var p: Vector2 = player["pos"]
+	var hd: Vector2 = player["heading"]
+	var tgt := _front_target(float(sk["range"]))
+	var end := tgt.pos if tgt != null else p + hd * 240.0
+	var h0 := 1.0 if cute else 1.3
+	var from := _to3(p) + Vector3(0, h0, 0) + Vector3(hd.x, 0, hd.y) * 0.6
+	var to := _to3(end) + Vector3(0, 0.8, 0)
+	var secs := clampf(from.distance_to(to) / 22.0, 0.12, 0.5)
+	FireFx.bolt(self, from, to, secs, func() -> void:
+		Sfx.play("fire_hit")
+		shake = maxf(shake, 0.2)
+		for m in monsters.duplicate():
+			if is_instance_valid(m) and m.pos.distance_to(end) < 70.0:
+				_damage_monster(m, float(sk["dmg"]) * career.damage_mult(), "player", p)
+				_ignite(m, float(sk["burn"])))
+
+
+func _cast_inferno(id: String) -> void:
+	if not _pay_skill(id):
+		return
+	var sk := skills.def(id)
+	Sfx.play("fire")
+	Sfx.play("fire_hit")
+	var p: Vector2 = player["pos"]
+	player_view.lunge()
+	FireFx.burst(self, _to3(p), 3.4, 44)
+	Fx.ring(self, _to3(p), Color(1.0, 0.55, 0.2), 6.0)
+	shake = maxf(shake, 0.55)
+	hud.rip("blast", "INFERNO!", "", Color(1.0, 0.5, 0.15))
+	for m in monsters.duplicate():
+		if m.pos.distance_to(p) < float(sk["radius"]):
+			_damage_monster(m, float(sk["dmg"]) * career.damage_mult(), "player", p, 1)
+			_ignite(m, float(sk["burn"]))
+
+
+func _cast_whirl(id: String) -> void:
+	if not _pay_skill(id):
+		return
+	var sk := skills.def(id)
+	Sfx.play("swing")
+	Sfx.play("blade", -4.0)
+	var p: Vector2 = player["pos"]
+	player_view.lunge()
+	Fx.slam(self, _to3(p), 2.6, Color(1.0, 0.9, 0.6))
+	shake = maxf(shake, 0.35)
+	for m in monsters.duplicate():
+		if m.pos.distance_to(p) < float(sk["radius"]) + 12.0 * m.size_mult():
+			_damage_monster(m, float(sk["dmg"]) * career.damage_mult(), "player", p, 1)
+
+
+func _cast_mend(id: String) -> void:
+	var sk := skills.def(id)
+	if float(player["hp"]) >= float(player["max_hp"]) - 1.0:
+		player_view.say("Already whole.", 1.0)
+		return
+	if not _pay_skill(id):
+		return
+	player["hp"] = minf(float(player["max_hp"]), float(player["hp"]) + float(sk["heal"]))
+	Sfx.play("heal")
+	Fx.heal(self, _to3(player["pos"]) + Vector3(0, 0.6, 0))
+	_pop_number(_to3(player["pos"]) + Vector3(0, 2.2, 0), "+%d" % int(sk["heal"]), Color(0.6, 1.0, 0.7))
+
+
+func _cast_summon(id: String) -> void:
+	if not _pay_skill(id):
+		return
+	var sk := skills.def(id)
+	Sfx.play("summon")
+	var p: Vector2 = player["pos"]
+	for k in int(sk["count"]):
+		var look := {"skin": Color(0.96, 0.92, 0.84), "hair": Color(0.45, 0.35, 0.25), "cloth": Color(0.93, 0.88, 0.74), "pants": Color(0.80, 0.74, 0.60),
+			"hat": "spiky", "weapon": "axe", "eyes": "tall", "brows": "dash", "chin": 0.22}
+		var v := _make_standee(_bake_person(look, Vector2i(192, 240)), 1.35, "Paper Squire")
+		v.show_hp = false
+		v.base_tint = Color(0.96, 0.98, 1.0)
+		var ang := TAU * float(k) / float(maxi(1, int(sk["count"]))) + 0.7
+		var at := try_move(p, Vector2(cos(ang), sin(ang)) * 60.0, 9.0)
+		allies.append({"pos": at, "ttl": float(sk["secs"]), "view": v, "cd": 0.3, "dmg": float(sk["dmg"]), "last": at, "slot": k})
+		Fx.puff(self, _to3(at), 0.8, Color(1.0, 0.97, 0.9))
+		Fx.sparks(self, _to3(at) + Vector3(0, 0.8, 0), Color(1.0, 0.95, 0.7), 10, 3.0)
+	hud.rip("blast", "SQUIRES!" if int(sk["count"]) == 1 else "PAPER COMPANY!", "", Color(0.95, 0.9, 0.7))
+
+
+func _update_allies(delta: float) -> void:
+	var right := _cam_right()
+	for a in allies.duplicate():
+		a["ttl"] = float(a["ttl"]) - delta
+		var v: Standee = a["view"]
+		if float(a["ttl"]) <= 0.0 or not is_instance_valid(v):
+			if is_instance_valid(v):
+				Fx.puff(self, _to3(a["pos"]), 0.8, Color(1.0, 0.97, 0.9))
+				Sfx.play("vanish")
+				v.queue_free()
+			allies.erase(a)
+			continue
+		var pos: Vector2 = a["pos"]
+		var target: Monster = null
+		var bd := 300.0
+		for m in monsters:
+			var d: float = m.pos.distance_to(pos)
+			if d < bd and m.pos.distance_to(player["pos"]) < 420.0:
+				bd = d
+				target = m
+		var goal: Vector2 = player["pos"] + Vector2(cos(float(a["slot"]) * 2.1 + 1.0), sin(float(a["slot"]) * 2.1 + 1.0)) * 70.0
+		var moving := 0.0
+		a["cd"] = maxf(0.0, float(a["cd"]) - delta)
+		if target != null:
+			if bd > 52.0:
+				goal = target.pos
+			else:
+				goal = pos
+				if float(a["cd"]) <= 0.0:
+					a["cd"] = 0.8
+					var dmg: float = float(a["dmg"]) * career.damage_mult()
+					_damage_monster(target, dmg, "player", pos, 0)
+					v.lunge()
+		var to_goal := goal - pos
+		if to_goal.length() > 26.0:
+			a["pos"] = try_move(pos, to_goal.normalized() * 170.0 * delta, 9.0)
+			moving = 1.0
+			if absf(to_goal.dot(right)) > 4.0:
+				v.facing = signf(to_goal.dot(right))
+		if pos.distance_to(player["pos"]) > 700.0:
+			a["pos"] = try_move(player["pos"], Vector2(40, 0), 9.0)
+		v.position = Bend.at(_to3(a["pos"]))
+		v.rotation.y = cam_yaw
+		v.animate(delta, moving)
 
 
 ## Special attack: a dragon head swoops in from behind the player (off the
 ## top corner opposite the way they face) and breathes fire forward.
 func _player_dragon() -> void:
-	if float(player.get("dragon_cool", 0.0)) > 0.0 or hud.dragon_fx.busy():
+	if hud.dragon_fx.busy():
 		return
-	if float(player["ink"]) < 60.0:
-		player_view.say("Not enough ink for a dragon.", 1.2)
+	if not _pay_skill("dragon"):
 		return
-	player["ink"] = float(player["ink"]) - 60.0
-	player["dragon_cool"] = 8.0
 	var hd: Vector2 = player["heading"]
 	var side := signf(hd.dot(_cam_right()))
 	if side == 0.0:
@@ -2173,10 +2864,12 @@ func _player_dragon() -> void:
 		shake = maxf(shake, 0.7)
 		fov_kick = maxf(fov_kick, 6.0)
 		var end := p + hd * 420.0
+		hud.rip("blast", "DRAGON!", "", Color(1.0, 0.5, 0.1))
 		for m in monsters.duplicate():
 			if is_instance_valid(m) and _seg_dist(m.pos, p, end) < 120.0:
-				_damage_monster(m, 55.0, "player", p, 2, true)
-				Fx.burst(self, _to3(m.pos) + Vector3(0, 1.0, 0), [Color(1.0, 0.5, 0.1), Color(1.0, 0.85, 0.3)], 18, 5.0)
+				_damage_monster(m, float(skills.def("dragon")["dmg"]) * career.damage_mult(), "player", p, 2, true)
+				FireFx.burst(self, _to3(m.pos) + Vector3(0, 0.4, 0), 1.2, 24)
+				_ignite(m, 4.0)
 	, CONNECT_ONE_SHOT)
 
 
@@ -2204,13 +2897,16 @@ func _open_dialog(n: Npc) -> void:
 func _close_dialog() -> void:
 	Standee.quiet = false
 	hud.close_dialog()
-	if dialog_npc != null:
+	if dialog_npc != null and is_instance_valid(dialog_npc) and is_instance_valid(dialog_npc.view):
 		dialog_npc.view.talking = false
-		dialog_npc.view.bubble.hide_bubble()
+		if dialog_npc.view.bubble != null:
+			dialog_npc.view.bubble.hide_bubble()
 	dialog_npc = null
 
 
 func _talk_line(n: Npc) -> String:
+	if n is Merchant:
+		return "I am %s, a travelling merchant. Right now I am %s. I carry %d coins." % [n.display_name, n.route_text(self), int(Economy.wallets[n.id]["coins"])]
 	var coins := int(Economy.wallets[n.id]["coins"])
 	var mood := "I could eat." if n.hunger > 60.0 else "I ate well today."
 	if n.hunger > 90.0:
@@ -2227,10 +2923,26 @@ func _talk_options(n: Npc) -> Array:
 	var giver := n.job_id if n.job_kind != "guard" else _guard_post_id()
 	for q in quests.offers:
 		if q["giver"] == giver:
-			opts.append({"text": "Any work? (%s, %d coins)" % [q["title"], int(q["reward"])], "quest": q})
+			opts.append({"text": "Any odd jobs? (%s, %d coins)" % [q["title"], int(q["reward"])], "quest": q})
 			break
 	if n.job_id != "" and Economy.shops.has(n.job_id):
 		opts.append({"text": "Let me see your goods.", "shop": n.job_id})
+	if n is Merchant:
+		opts.append({"text": "Show me your wares.", "shop": n.cart_id})
+		opts.append({"text": "Where are you headed?", "route": true})
+		opts.append({"text": "Any news?", "gossip": true})
+		opts.append({"text": "Bye.", "bye": true})
+		return opts
+	if n.job_id != "" and n.city != "road":
+		opts.append({"text": "Why are prices like this?", "why": true})
+	opts.append_array(story.options(self, n))
+	var jd := career.job_def(n.job_kind) if n.job_id != "" else {}
+	if not jd.is_empty():
+		if career.has_job() and career.job["place"] == n.job_id:
+			opts.append({"text": "How is my job going?", "jobinfo": true})
+			opts.append({"text": "I quit.", "quit": true})
+		elif not career.has_job():
+			opts.append({"text": "I want a job here.", "work": n.job_id})
 	opts.append({"text": "Any news?", "gossip": true})
 	opts.append({"text": "Bye.", "bye": true})
 	return opts
@@ -2247,17 +2959,85 @@ func dialog_choice(opt: Dictionary) -> void:
 			hud.set_dialog_text("Thank you. The reward waits at the quest board. Come back when it is done.", [{"text": "Bye.", "bye": true}])
 		else:
 			hud.set_dialog_text("Sorry, we cannot afford help right now.", [{"text": "Bye.", "bye": true}])
+	elif opt.has("story"):
+		var said := story.choose(self, opt["story"])
+		hud.set_dialog_text(said, _talk_options(n))
+	elif opt.has("travel"):
+		var tn := town_by_id(opt["travel"])
+		_close_dialog()
+		hud.fade_through(func() -> void:
+			_teleport(_free_spot_near(tn["start"])))
+		Economy.message.emit("The guards send you by cart to %s." % tn["name"])
+	elif opt.has("route"):
+		var r: String = n.route_text(self) if n is Merchant else ""
+		hud.set_dialog_text("Bound for: %s. I will not tell you the price I paid. A merchant has to keep some secrets." % r, _talk_options(n))
+	elif opt.has("why"):
+		hud.set_dialog_text(_why_prices(n), _talk_options(n))
+	elif opt.has("work"):
+		var place: String = opt["work"]
+		hud.set_dialog_text(career.offer_text(self, place), [{"text": "Take the job", "apply": place}, {"text": "Never mind.", "back": true}])
+	elif opt.has("apply"):
+		var why := career.apply(self, opt["apply"])
+		if why == "":
+			hud.set_dialog_text("Welcome aboard. Be here on shift, near the door, or you are out.", [{"text": "Bye.", "bye": true}])
+		else:
+			hud.set_dialog_text(why, [{"text": "Never mind.", "back": true}])
+	elif opt.has("back"):
+		hud.set_dialog_text(_talk_line(n), _talk_options(n))
+	elif opt.has("jobinfo"):
+		hud.set_dialog_text("%s\nRank %d. Wage %d a day. Shifts worked: %d." % [career.status_text(self), career.rank(), career.wage(), int(career.job["shifts"])], _talk_options(n))
+	elif opt.has("quit"):
+		career.quit(self)
+		hud.set_dialog_text("Pity. The door is open if you change your mind.", [{"text": "Bye.", "bye": true}])
 	elif opt.has("shop"):
 		_close_dialog()
-		hud.open_shop(opt["shop"])
+		if career.refuses(self, opt["shop"]):
+			Economy.message.emit("They will not trade with you today.")
+		else:
+			hud.open_shop(opt["shop"])
 	elif opt.has("gossip"):
 		hud.set_dialog_text(_gossip(n), _talk_options(n))
 	else:
 		_close_dialog()
 
 
+## What this city's talk says about prices, in the city's own tone.
+func _why_prices(n: Npc) -> String:
+	var tone: String = String(town_by_id(n.city).get("tone", "cheery"))
+	var cl: Dictionary = Economy.data["city_lines"].get(tone, {})
+	var news := Economy.city_news(n.city, rng)
+	var tail := ""
+	for m in npcs:
+		if m is Merchant and m.phase == "to_sell" and not m.trade.is_empty() and Economy.shops.has(m.trade["to"]) and Economy.shops[m.trade["to"]]["city"] == n.city:
+			tail = " " + String(Economy.data["reasons"]["travel"]) % [m.display_name, String(Economy.GOODS[m.trade["good"]]["name"]).to_lower(), String(Economy.city_def(Economy.shops[m.trade["from"]]["city"]).get("name", "")), String(Economy.city_def(n.city).get("name", ""))]
+			break
+	return news + tail
+
+
 func _gossip(n: Npc = null) -> String:
 	var lines: Array = []
+	var cty: String = n.city if n != null and n.city != "road" else "sunny"
+	var tone: String = String(town_by_id(cty).get("tone", "cheery"))
+	var cl: Dictionary = Economy.data["city_lines"].get(tone, {})
+	if cl.has("joke"):
+		lines.append(String(cl["joke"][rng.randi() % cl["joke"].size()]))
+	lines.append(Economy.city_news(cty, rng))
+	for e in Economy.active_events:
+		if e["city"] == cty or e["city"] == "":
+			lines.append(String(e["text"]) % String(Economy.city_def(cty).get("name", cty)))
+	for e in Economy.active_events:
+		lines.append(String(e.get("npc", "")))
+	for m in npcs:
+		if m is Merchant and m.phase != "rest":
+			lines.append("Saw %s on the road: %s." % [m.display_name, m.route_text(self)])
+			break
+	if not career.grudges.is_empty():
+		for sid in career.grudges:
+			if career.is_banned(self, sid) and Economy.shops.has(sid):
+				lines.append("The %s is still sore about what you did. Give it time." % Economy.shops[sid]["name"])
+	if career.has_job():
+		lines.append("They say you work at the %s now. Honest money, that." % building(career.job["place"])["name"])
+	lines = lines.filter(func(l): return String(l) != "")
 	var bakery := _shop_of_kind("bakery")
 	if bakery != "":
 		lines.append("Bread costs %d at the bakery right now. Prices follow the shelves." % Economy.buy_price(bakery, "bread"))
@@ -2268,6 +3048,182 @@ func _gossip(n: Npc = null) -> String:
 	lines.append("The treasury holds %d coins. It pays the guards and helps newcomers." % int(Economy.wallets[_guard_post_id()]["coins"]))
 	lines.append("Every coin you see is accounted for. The ledger never lies.")
 	return lines[rng.randi() % lines.size()]
+
+
+# ---------------- travelling merchants ----------------
+
+func _spawn_merchants() -> void:
+	var md: Dictionary = Economy.data.get("merchants", {})
+	var count := int(md.get("count", 0))
+	if Game.low_end:
+		count = int(ceil(count * 0.6))
+	if towns.size() < 2:
+		count = mini(count, 2)
+	var names: Array = md.get("names", ["Trader"])
+	var archs: Array = md.get("archetypes", ["merchant"])
+	for i in count:
+		var tn: Dictionary = towns[i % towns.size()]
+		var m := Merchant.new()
+		m.id = "merchant_%d" % i
+		m.cart_id = "cart_%d" % i
+		m.display_name = String(names[(i * 3 + int(rng.seed)) % names.size()])
+		m.home_id = ""
+		m.carry = int(md.get("carry", 6))
+		m.min_profit = int(md.get("min_profit", 3))
+		m.rest_secs = float(md.get("rest_secs", 14.0))
+		m.hp = float(md.get("hp", 70.0))
+		m.max_hp = m.hp
+		m.rest_t = 3.0 + i * 4.0
+		var door: Vector2 = tn["start"] + Vector2(rng.randf_range(-40.0, 40.0), rng.randf_range(10.0, 50.0))
+		m.pos = _free_spot_near(door)
+		m.wander_target = m.pos
+		Economy.add_shop(m.cart_id, "%s's cart" % m.display_name, {}, {}, "*", 0, "", "")
+		Economy.add_wallet(m.id, int(md.get("coins", 70)))
+		var look: Dictionary = LOOKS[""].duplicate()
+		look["skin"] = SKINS[rng.randi() % SKINS.size()]
+		look["hair"] = HAIRS[rng.randi() % HAIRS.size()]
+		look["cloth"] = Color.from_hsv(rng.randf(), 0.45, 0.85)
+		look["pants"] = Color.from_hsv(rng.randf(), 0.25, 0.40)
+		look["wide"] = rng.randf_range(0.9, 1.1)
+		if cute:
+			var arch := Archetypes.randomized(String(archs[i % archs.size()]), rng, SKINS, HAIRS)
+			for k in ["skin", "hair", "wide"]:
+				if not arch.has(k):
+					arch[k] = look[k]
+			look = arch
+		m.view = _make_standee(_bake_person(look), rng.randf_range(1.55, 1.7) if cute else 2.2, m.display_name)
+		m.set_meta("look", look)
+		npcs.append(m)
+
+
+## The closest city's start tile, where a frightened merchant runs to.
+func nearest_town_pos(p: Vector2) -> Vector2:
+	return _nearest_town_dict(p).get("start", start_pos)
+
+
+## Where a resting merchant waits: the caravanserai door of the nearest city, or its gate.
+func merchant_rest_spot(p: Vector2) -> Vector2:
+	var tn := _nearest_town_dict(p)
+	var cs := _shop_of_kind("caravanserai", tn.get("id", "sunny"))
+	if cs != "":
+		return door_of(cs) + Vector2(60, 40)
+	return tn.get("start", start_pos) + Vector2(40, 30)
+
+
+# ---------------- daily events ----------------
+
+var _event_said := {}
+
+
+## One roll a day (Economy.roll_events): fairs, blight, fish runs, collapses,
+## caravans and raiders move prices, supply and danger. People react.
+func _roll_events() -> void:
+	var before := {}
+	for e in Economy.active_events:
+		before[str(e["id"]) + str(e["city"])] = true
+	var ids: Array = []
+	for tn in towns:
+		ids.append(tn["id"])
+	if career.level >= 5 and rng.randf() < (0.5 if _arg_value("--dragons") != "" else 0.14):
+		_spawn_dragon()
+	var lines: Array = Economy.roll_events(day_number(), ids, rng)
+	for l in lines:
+		Economy.message.emit(l)
+	for e in Economy.active_events:
+		if before.has(str(e["id"]) + str(e["city"])):
+			continue
+		hud.banner(String(e["name"]), String(Economy.city_def(e["city"]).get("name", e["city"])))
+		_event_started(e)
+
+
+func _event_started(e: Dictionary) -> void:
+	var tn := town_by_id(e["city"])
+	if tn.is_empty():
+		return
+	var c: Vector2 = tn["start"]
+	match String(e["id"]):
+		"festival":
+			Fx.burst(self, _to3(c) + Vector3(0, 3.0, 0), [Color(1, 0.8, 0.3), Color(0.95, 0.45, 0.55), Color(0.5, 0.8, 0.95), Color(0.6, 0.9, 0.5)], 60, 7.0)
+			for n in npcs:
+				if n.city == e["city"] and not (n is Merchant):
+					n.fun_cd = 0.0
+					n.say("Hooray!")
+		"raiders":
+			# wolves come out of the hills to the road by the city; guards and the treasury respond
+			for i in 3:
+				var a := rng.randf() * TAU
+				var q := _free_spot_near(c + Vector2(cos(a), sin(a)) * rng.randf_range(520.0, 760.0))
+				_add_monster("wolf", q, 1)
+			for n in npcs:
+				if n.city == e["city"] and n.job_kind != "guard" and not (n is Merchant):
+					n.state = "flee"
+					n.scare = 5.0
+					n.say("Raiders!")
+		"blight", "collapse":
+			for n in npcs:
+				if n.city == e["city"] and not (n is Merchant):
+					n.say(String(e.get("npc", "Bad news.")))
+					break
+
+
+## People near the action mutter about whatever is going on.
+func _event_chatter() -> void:
+	for e in Economy.active_events:
+		var line: String = String(e.get("npc", ""))
+		if line == "":
+			continue
+		for n in npcs:
+			if n.city != e["city"] or n is Merchant or n.inside:
+				continue
+			var key: String = str(e["id"]) + n.id + str(day_number())
+			if _event_said.has(key) or n.speech != "":
+				continue
+			if n.pos.distance_to(player["pos"]) > 700.0:
+				continue
+			_event_said[key] = true
+			n.say(line)
+			return
+
+
+func event_summary() -> String:
+	var names: PackedStringArray = []
+	for e in Economy.active_events:
+		names.append(String(e["name"]))
+	return " - ".join(names)
+
+
+## Every coin that reaches or leaves the player floats up as a number.
+func _on_gold(from_id: String, to_id: String, amount: int, _memo: String) -> void:
+	if amount <= 0 or not Game.started:
+		return
+	var at := _to3(player["pos"])
+	if to_id == "player":
+		_pop_number(at + Vector3(-0.6, 2.4, 0), "+%d" % amount, Color(1.0, 0.85, 0.25))
+	elif from_id == "player":
+		_pop_number(at + Vector3(0.6, 2.0, 0), "-%d" % amount, Color(1.0, 0.4, 0.3))
+
+
+## Treasuries hire more guards when beasts are about, up to three a town.
+func _hire_guards() -> void:
+	for tn in towns:
+		if not tn.get("populated", false):
+			continue
+		var post := _guard_post_id(tn["id"])
+		if post == "player":
+			continue
+		var guards := npcs.filter(func(n): return n.job_kind == "guard" and n.city == tn["id"]).size()
+		var danger := Economy.road_danger()
+		for m in monsters:
+			if m.pos.distance_to(tn["start"]) < 1300.0:
+				danger += 1
+		var want := 1 + (1 if danger >= 2 else 0) + (1 if danger >= 4 else 0)
+		if guards >= mini(want, 3) or int(Economy.wallets[post]["coins"]) < 150:
+			continue
+		var houses: Array = buildings.filter(func(b): return b["kind"] == "house" and b["city"] == tn["id"])
+		_spawn_npc(building(post), houses, tn)
+		var g: Npc = npcs[npcs.size() - 1]
+		g.say("Reporting for duty.")
+		Economy.message.emit("%s hired a new guard (%d on duty) as beasts gather." % [String(Economy.city_def(tn["id"]).get("name", tn["id"])), guards + 1])
 
 
 func _chatter(delta: float) -> void:
@@ -2385,12 +3341,17 @@ func _resolve_deaths() -> void:
 		sfx("boom")
 		sfx("shatter", -4.0)
 		var at := _to3(m.pos) + Vector3(0, 1.0, 0)
-		Fx.burst(self, at, [Color(1, 0.85, 0.3), Color(1, 1, 1), Color(0.95, 0.5, 0.6)], 28 if m.kind != "boss" else 90, 5.0)
+		Fx.burst(self, at, [Color(1, 0.85, 0.3), Color(1, 1, 1), Color(0.95, 0.5, 0.6)], 28 if not Monster.is_big(m.kind) else 90, 5.0)
 		Fx.puff(self, _to3(m.pos), 1.4)
-		if m.kind == "boss":
-			boss_timer = DAY_SECONDS * 2.0
+		if Monster.is_big(m.kind):
+			if m.killer_id == "player":
+				hud.rip("boss", "BOSS DOWN!", m.display_name, Color(1.0, 0.8, 0.25))
 			Fx.ring(self, _to3(m.pos), Color(1, 0.9, 0.4), 8.0)
-			hud.banner("%s defeated" % m.display_name, "Thorn Ruins are quiet. For now.")
+			if m.kind == "boss":
+				boss_timer = DAY_SECONDS * 2.0
+				hud.banner("%s defeated" % m.display_name, "Thorn Ruins are quiet. For now.")
+			else:
+				hud.banner("%s slain" % m.display_name, "A dragon's hoard is yours.")
 		if m.killer_id == "player":
 			var drops: Dictionary = Monster.TYPES[m.kind]["drops"]
 			var got: Array = []
@@ -2399,9 +3360,15 @@ func _resolve_deaths() -> void:
 				got.append("%d %s" % [int(drops[good]), Economy.GOODS[good]["name"]])
 			Economy.message.emit("You beat the %s. Looted %s." % [m.display_name, ", ".join(PackedStringArray(got))])
 			quests.on_kill(self, m.kind)
+			career.on_kill(self, m)
+			if bestiary.has(m.kind):
+				bestiary[m.kind]["kills"] = int(bestiary[m.kind]["kills"]) + 1
+			story.on_kill(self, m.kind)
 		else:
 			var guard := npc_by_id(m.killer_id)
-			if guard != null and Economy.pay(guard.job_id, guard.id, BOUNTY):
+			if guard != null and guard.job_id == "":
+				guard.say("Got it!")
+			elif guard != null and Economy.pay(guard.job_id, guard.id, BOUNTY):
 				guard.say("Bounty earned.")
 				Economy.message.emit("%s the guard felled a %s and took a %d coin bounty." % [guard.display_name, m.display_name, BOUNTY])
 			elif guard != null:
@@ -2414,13 +3381,20 @@ func _resolve_deaths() -> void:
 			n.view.fall()
 			var cause := "starved" if n.last_hurt_by == "" else "was killed by a monster"
 			var estate := int(Economy.wallets[n.id]["coins"])
-			Economy.pay(n.id, _guard_post_id(n.city), estate)
+			var heir_city: String = n.city if n.city != "road" else String(_nearest_town_dict(n.pos).get("id", "sunny"))
+			Economy.pay(n.id, _guard_post_id(heir_city), estate)
+			if n is Merchant:
+				# the cart's goods and till are lost with it: coins go to the treasury too
+				var cart := int(Economy.wallets[n.cart_id]["coins"])
+				if cart > 0:
+					Economy.pay(n.cart_id, _guard_post_id(heir_city), cart)
+				Economy.shops.erase(n.cart_id)
 			Economy.message.emit("%s %s. Their %d coins went to the town treasury." % [n.display_name, cause, estate])
 
 
 func _cull_monsters() -> void:
 	for m in monsters.duplicate():
-		if m.kind == "boss":
+		if Monster.is_big(m.kind):
 			continue
 		if m.pos.distance_to(player["pos"]) > 2700.0:
 			monsters.erase(m)
@@ -2473,6 +3447,7 @@ func _teleport(p: Vector2) -> void:
 func _find_nearby() -> void:
 	var p: Vector2 = player["pos"]
 	nearby_shop = ""
+	nearby_temple = ""
 	nearby_npc = null
 	nearby_gather = -1
 	near_board = p.distance_to(board_pos) < 70.0
@@ -2482,19 +3457,27 @@ func _find_nearby() -> void:
 	for b in buildings:
 		if b["shop"] and p.distance_to(b["door"]) < 60.0:
 			nearby_shop = b["id"]
-	if nearby_shop == "":
+	for b in buildings:
+		if b["kind"] == "temple" and p.distance_to(b["door"]) < 60.0:
+			nearby_temple = b["id"]
+	if nearby_shop == "" and nearby_temple == "":
 		nearby_npc = nearest_npc(p, 60.0)
 	if hud.shop_id != "" and p.distance_to(door_of(hud.shop_id)) > 140.0 and dialog_npc == null:
 		hud.close_shop()
 	var parts: Array = []
 	if nearby_gather >= 0:
-		parts.append("E  gather %s" % Economy.GOODS[gathers[nearby_gather]["good"]]["name"])
+		parts.append(_use_key() + "  gather %s" % Economy.GOODS[gathers[nearby_gather]["good"]]["name"])
+	elif nearby_temple != "":
+		parts.append(_use_key() + "  pray at the shrine (%d coins heals you)" % TEMPLE_FEE)
 	elif nearby_shop != "":
-		parts.append("E  trade at %s" % building(nearby_shop)["name"])
+		if building(nearby_shop)["kind"] == "exchange":
+			parts.append(_use_key() + "  read the price board")
+		else:
+			parts.append(_use_key() + "  trade at %s" % building(nearby_shop)["name"])
 	elif nearby_npc != null:
-		parts.append("E  talk to %s" % nearby_npc.display_name)
+		parts.append(_use_key() + "  talk to %s" % nearby_npc.display_name)
 	elif near_board:
-		parts.append("E  read the quest board")
+		parts.append(_use_key() + "  read the quest board")
 	prompt = "      ".join(PackedStringArray(parts))
 
 
@@ -2511,7 +3494,7 @@ func _sync_views(delta: float) -> void:
 		player_idle = 0.0
 	else:
 		player_idle += delta
-	_pick_view(player_view, hd, float(player["moving"]) > 0.0, player_idle > 0.35)
+	_pick_view(player_view, hd, float(player["moving"]) > 0.0, false)
 	player_view.animate(delta, float(player["moving"]) * (1.35 if player["sprint"] else 1.0))
 	player_view.set_hp(float(player["hp"]) / float(player["max_hp"]))
 	if float(player["moving"]) > 0.0:
@@ -2679,3 +3662,16 @@ func _apply_daylight() -> void:
 	var night := 1.0 - d
 	for l in lamps:
 		l.light_energy = night * 1.8
+
+
+func _notification(what: int) -> void:
+	# Alt-tabbing away can swallow key releases: never come back stuck.
+	if what == NOTIFICATION_APPLICATION_FOCUS_OUT or what == NOTIFICATION_APPLICATION_FOCUS_IN:
+		Input.flush_buffered_events()
+		for a in InputMap.get_actions():
+			if not String(a).begins_with("ui_"):
+				Input.action_release(a)
+		if dialog_npc != null and (not is_instance_valid(dialog_npc) or not is_instance_valid(dialog_npc.view)):
+			dialog_npc = null
+			Standee.quiet = false
+			hud.close_dialog()

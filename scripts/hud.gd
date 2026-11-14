@@ -40,6 +40,14 @@ var coin_label: Label
 var hp_g: Gauge
 var st_g: Gauge
 var ink_g: Gauge
+var xp_g: Gauge
+var lv_label: Label
+var job_label: Label
+var coin_delta: Label
+var _delta_acc := 0
+var _delta_t := 0.0
+var _death: PanelContainer
+var _death_open := false
 var status_card: Control
 var medal_face: PortraitFrame
 var chain_chip: NearChip
@@ -51,6 +59,10 @@ var pack_row: HBoxContainer
 var clock_label: Label
 var log_label: Label
 var log_panel: PanelContainer
+var menus: HudMenus
+var paused: bool:
+	get:
+		return menus != null and menus.is_paused()
 var prompt_label: Label
 var keys_label: Label
 var tracker: PanelContainer
@@ -73,6 +85,7 @@ var banner_sub: Label
 var curtain_l: ColorRect
 var curtain_r: ColorRect
 var rip_fx: RipFx
+var touch: TouchControls
 var dragon_fx: DragonFx
 var _rip_ready := 0
 var log_lines: Array = []
@@ -123,6 +136,11 @@ func _ready() -> void:
 	_build_status()
 	_build_top()
 	_build_log()
+	menus = HudMenus.new(self)
+	touch = TouchControls.new()
+	touch.hud = self
+	touch.main = main
+	root.add_child(touch)
 	_build_shop()
 	_build_dialog()
 	_build_map()
@@ -228,6 +246,10 @@ func _choice(n: int, text: String, bye := false) -> Button:
 	b.custom_minimum_size = Vector2(300, 0)
 	b.add_theme_font_override("font", head_font)
 	b.add_theme_font_size_override("font_size", 18)
+	if Game.touch:
+		# fingers need a fat target (about 56 px tall at 1280x720)
+		b.custom_minimum_size = Vector2(380, 56)
+		b.add_theme_font_size_override("font_size", 22)
 	for c in ["font_color", "font_hover_color", "font_pressed_color"]:
 		b.add_theme_color_override(c, INK)
 	var base := PAPER_LIGHT if not bye else NOTE.darkened(0.04)
@@ -371,10 +393,21 @@ func _build_status() -> void:
 	row.add_child(vb)
 	hp_g = Gauge.new(Color(0.88, 0.30, 0.30), "heart", 262.0, 26.0)
 	vb.add_child(hp_g)
-	st_g = Gauge.new(Color(0.45, 0.74, 0.34), "bolt", 262.0, 22.0)
+	st_g = Gauge.new(Color(0.95, 0.58, 0.18), "bolt", 262.0, 22.0)
 	vb.add_child(st_g)
 	ink_g = Gauge.new(Color(0.36, 0.56, 0.90), "magic_wand", 262.0, 22.0)
 	vb.add_child(ink_g)
+	# level and XP, a slim gold bar under the others
+	var xr := HBoxContainer.new()
+	xr.add_theme_constant_override("separation", 6)
+	vb.add_child(xr)
+	lv_label = _label("Lv 1", 18)
+	lv_label.custom_minimum_size = Vector2(46, 0)
+	xr.add_child(lv_label)
+	xp_g = Gauge.new(Color(0.95, 0.74, 0.22), "star", 208.0, 14.0)
+	xr.add_child(xp_g)
+	job_label = _label("", 15, INK.lightened(0.25))
+	vb.add_child(job_label)
 	var r3 := HBoxContainer.new()
 	r3.add_theme_constant_override("separation", 8)
 	vb.add_child(r3)
@@ -383,6 +416,9 @@ func _build_status() -> void:
 	r3.add_child(coin)
 	coin_label = _label("0", 28)
 	r3.add_child(coin_label)
+	coin_delta = _label("", 20, Color(0.2, 0.5, 0.2))
+	coin_delta.modulate.a = 0.0
+	r3.add_child(coin_delta)
 	pack_row = HBoxContainer.new()
 	pack_row.add_theme_constant_override("separation", 2)
 	pack_row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -447,8 +483,12 @@ func _build_log() -> void:
 	keys.custom_minimum_size = Vector2(560, 0)
 	keys.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	keys.alignment = FlowContainer.ALIGNMENT_END
-	for k in [["WASD", "move"], ["Shift", "run"], ["Space", "jump"], ["Click", "strike x3"], ["X", "dodge"], ["K", "beam"], ["V", "dragon"], ["E", "use"],
-			["F", "eat"], ["M", "map"], ["L", "quests"], ["Tab", "ledger"], ["Q C", "turn"], ["F2", "art style"], ["F1", "hide keys"]]:
+	var hints := [["WASD", "move"], ["Shift", "run"], ["Space", "jump"], ["Click", "strike x3"], ["X", "dodge"], ["K", "beam"], ["V", "dragon"], ["E", "use"],
+			["F", "eat"], ["M", "map"], ["L", "quests"], ["Tab", "ledger"], ["Q C", "turn"], ["F2", "art style"], ["F1", "hide keys"]]
+	if Game.touch:
+		hints = [["Stick", "move (push out to run)"], ["Sword", "strike x3"], ["Arrows", "jump"], ["Bubble", "use / talk"], ["Swirl", "dodge"],
+				["Bolt", "beam"], ["Flame", "dragon"], ["Bread", "eat"], ["Drag", "turn camera"], ["Pinch", "zoom"], ["?", "hide this"]]
+	for k in hints:
 		var row := HBoxContainer.new()
 		row.add_theme_constant_override("separation", 4)
 		row.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -533,8 +573,13 @@ func banner(title: String, sub: String) -> void:
 func _build_curtain() -> void:
 	curtain_l = ColorRect.new()
 	curtain_r = ColorRect.new()
+	var sh := preload("res://shaders/curtain.gdshader")
 	for c in [curtain_l, curtain_r]:
-		c.color = Color(0.56, 0.40, 0.24)
+		c.color = Color(1, 1, 1)
+		var m := ShaderMaterial.new()
+		m.shader = sh
+		m.set_shader_parameter("side", 1.0 if c == curtain_l else -1.0)
+		c.material = m
 		c.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		c.visible = false
 		root.add_child(c)
@@ -544,13 +589,14 @@ func _build_curtain() -> void:
 func fade_through(cb: Callable) -> void:
 	var vs := root.get_viewport_rect().size
 	for c in [curtain_l, curtain_r]:
-		c.size = Vector2(vs.x * 0.5 + 4, vs.y)
+		c.size = Vector2(vs.x * 0.5 + 40, vs.y)
+		(c.material as ShaderMaterial).set_shader_parameter("px", c.size)
 		c.visible = true
 	curtain_l.position = Vector2(-vs.x * 0.5, 0)
 	curtain_r.position = Vector2(vs.x, 0)
 	var tw := create_tween()
 	tw.tween_property(curtain_l, "position:x", 0.0, 0.3).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
-	tw.parallel().tween_property(curtain_r, "position:x", vs.x * 0.5, 0.3).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	tw.parallel().tween_property(curtain_r, "position:x", vs.x * 0.5 - 40.0, 0.3).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
 	tw.tween_callback(cb)
 	tw.tween_interval(0.25)
 	tw.tween_property(curtain_l, "position:x", -vs.x * 0.5, 0.35).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
@@ -567,7 +613,11 @@ func _hide_curtains() -> void:
 
 func _build_title() -> void:
 	_title_font = load("res://assets/fonts/stampcraft.ttf")
+	table = TableArt.new()
+	table.visible = false
+	root.add_child(table)
 	title_panel = Control.new()
+	title_panel.z_index = 41
 	title_panel.visible = false
 	title_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(title_panel)
@@ -594,10 +644,8 @@ func _build_title() -> void:
 	play.add_theme_font_size_override("font_size", 34)
 	play.pressed.connect(_on_play)
 	vb.add_child(play)
-	var style := _button("Art style: %s  (switch)" % ("Cute" if Game.cute() else "Real"))
-	style.pressed.connect(_on_style)
-	vb.add_child(style)
-	var how := _label("WASD move   Click strike   X dodge   E use   Tab ledger", 17, NOTE)
+	_build_wallet_row(vb)
+	var how := _label("Stick move   Sword strike   Bubble use   Drag turn   Pinch zoom" if Game.touch else "WASD move   Click strike   X dodge   E use   Tab ledger", 17, NOTE)
 	how.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	how.add_theme_color_override("font_outline_color", INK)
 	how.add_theme_constant_override("outline_size", 7)
@@ -613,15 +661,110 @@ func _build_title() -> void:
 	col.add_child(pad)
 
 
+## Optional NEAR wallet: Play is always "as a guest". On the web "Connect NEAR
+## wallet" goes through the page's login; on desktop (and in a browser with no
+## wallet page) a name.testnet field is checked by the relayer. Nothing here can
+## stop the game from starting.
+var _wallet_note: Label
+var _wallet_edit: LineEdit
+var _wallet_row: HBoxContainer
+
+
+func _build_wallet_row(vb: VBoxContainer) -> void:
+	_wallet_row = HBoxContainer.new()
+	_wallet_row.add_theme_constant_override("separation", 8)
+	vb.add_child(_wallet_row)
+	_wallet_note = _label("", 15, NOTE)
+	_wallet_note.add_theme_color_override("font_outline_color", INK)
+	_wallet_note.add_theme_constant_override("outline_size", 6)
+	_wallet_note.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_wallet_note.autowrap_mode = TextServer.AUTOWRAP_WORD
+	_wallet_note.custom_minimum_size = Vector2(360, 0)
+	vb.add_child(_wallet_note)
+	Game.account_changed.connect(_refresh_wallet)
+	Chain.status_changed.connect(_refresh_wallet)
+	_refresh_wallet()
+
+
+func _refresh_wallet() -> void:
+	if _wallet_row == null:
+		return
+	for c in _wallet_row.get_children():
+		c.queue_free()
+	_wallet_edit = null
+	if Game.account != "":
+		var who := _label(Game.account, 18, INK)
+		who.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		who.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		_wallet_row.add_child(who)
+		var out := _button("Unlink", PAPER_LIGHT)
+		out.add_theme_font_size_override("font_size", 16)
+		out.pressed.connect(func():
+			Chain.link("")
+			Game.set_account(""))
+		_wallet_row.add_child(out)
+	elif OS.has_feature("web"):
+		var conn := _button("Connect NEAR wallet", PAPER_LIGHT)
+		conn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		conn.add_theme_font_size_override("font_size", 20)
+		conn.pressed.connect(func(): JavaScriptBridge.eval("window.pennyfold && window.pennyfold.login()"))
+		_wallet_row.add_child(conn)
+	else:
+		_wallet_edit = LineEdit.new()
+		_wallet_edit.placeholder_text = "yourname.testnet (optional)"
+		_wallet_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		_wallet_edit.add_theme_font_override("font", head_font)
+		_wallet_edit.add_theme_font_size_override("font_size", 18)
+		_wallet_edit.add_theme_color_override("font_color", INK)
+		_wallet_edit.add_theme_color_override("font_placeholder_color", INK.lightened(0.45))
+		var fs := _style(PAPER_LIGHT, 1)
+		fs.set_content_margin_all(8)
+		_wallet_edit.add_theme_stylebox_override("normal", fs)
+		_wallet_edit.add_theme_stylebox_override("focus", fs)
+		_wallet_edit.text_submitted.connect(func(_t): _on_link_pressed())
+		_wallet_row.add_child(_wallet_edit)
+		var link := _button("Link", PAPER_LIGHT)
+		link.add_theme_font_size_override("font_size", 18)
+		link.pressed.connect(_on_link_pressed)
+		_wallet_row.add_child(link)
+	_wallet_note.text = Chain.link_note if Chain.link_note != "" else ("Optional: link a NEAR testnet wallet to be paid, or just play as a guest." if Game.account == "" else "")
+
+
+func _on_link_pressed() -> void:
+	if _wallet_edit == null:
+		return
+	var a := _wallet_edit.text.strip_edges().to_lower()
+	if not Game.valid_account(a):
+		Chain.link_note = "That does not look like a testnet account (name.testnet)."
+		_refresh_wallet()
+		return
+	Game.set_account(a)
+	Chain.link(a)
+
+
+var table: TableArt
+
+
 func show_title() -> void:
+	table.visible = true
 	title_panel.visible = true
 
 
 func _on_play() -> void:
+	if not bool(Game.hero["made"]):
+		title_panel.visible = false
+		menus.show_creator(func() -> void:
+			main.apply_hero()
+			_begin_play())
+		return
+	_begin_play()
+
+
+func _begin_play() -> void:
 	Game.started = true
 	Game.via_title = true
 	title_panel.visible = false
-	fade_through(_noop)
+	fade_through(func() -> void: table.visible = false)
 
 
 func _noop() -> void:
@@ -637,14 +780,160 @@ func _on_style() -> void:
 
 func _build_shop() -> void:
 	shop_panel = _panel()
-	shop_panel.visible = false
+	_vis(shop_panel, false)
 	root.add_child(shop_panel)
 	_center(shop_panel)
+
+
+var prices_panel: PanelContainer
+var bestiary_panel: PanelContainer
+
+
+## The exchange's price board: every good's cheapest ask in each city, so a
+## trader can see where to buy and where to sell. Cheapest is green, dearest red.
+func open_prices(exchange_id: String) -> void:
+	close_all()
+	if prices_panel != null:
+		prices_panel.queue_free()
+	prices_panel = _panel(PAPER_LIGHT)
+	prices_panel.visible = false
+	root.add_child(prices_panel)
+	_center(prices_panel)
+	var vb := VBoxContainer.new()
+	vb.add_theme_constant_override("separation", 6)
+	prices_panel.add_child(vb)
+	vb.add_child(_label("Price board", 34))
+	var cities: Array = main.towns
+	var grid := GridContainer.new()
+	grid.columns = cities.size() + 1
+	grid.add_theme_constant_override("h_separation", 22)
+	grid.add_theme_constant_override("v_separation", 2)
+	vb.add_child(grid)
+	grid.add_child(_label("Good", 18, INK.lightened(0.3)))
+	for tn in cities:
+		grid.add_child(_label(tn["name"], 18, INK.lightened(0.3)))
+	for g in Economy.GOODS:
+		var row: Array = []
+		var lo := 9999
+		var hi := 0
+		for tn in cities:
+			var best := 0
+			for sid in Economy.shops:
+				var sh: Dictionary = Economy.shops[sid]
+				if sh["city"] != tn["id"] or sh["kind"] == "" or int(sh["stock"].get(g, 0)) <= 0:
+					continue
+				var pr := Economy.buy_price(sid, g)
+				if best == 0 or pr < best:
+					best = pr
+			row.append(best)
+			if best > 0:
+				lo = mini(lo, best)
+				hi = maxi(hi, best)
+		grid.add_child(_label(Economy.GOODS[g]["name"], 18))
+		for b in row:
+			var col := INK
+			if b > 0 and lo != hi:
+				col = Color(0.15, 0.5, 0.2) if b == lo else (Color(0.75, 0.2, 0.15) if b == hi else INK)
+			grid.add_child(_label(str(b) if b > 0 else "-", 18, col))
+	var news := _label(main.event_summary() if main.event_summary() != "" else "No events today.", 17, INK.lightened(0.2))
+	vb.add_child(news)
+	var hb := HBoxContainer.new()
+	hb.add_theme_constant_override("separation", 10)
+	vb.add_child(hb)
+	var trade := _button("Trade here", GOLD)
+	trade.pressed.connect(func(): open_shop(exchange_id))
+	hb.add_child(trade)
+	var cl := _button("Close (Esc)")
+	cl.pressed.connect(close_all)
+	hb.add_child(cl)
+	_vis(prices_panel, true)
+	Sfx.play("open")
+
+
+## The bestiary: every beast met so far, with art, what it drops and where it
+## lives. Beasts not met yet show as a "?".
+func toggle_bestiary() -> void:
+	var show := bestiary_panel == null or not bestiary_panel.visible
+	close_all()
+	if not show:
+		Sfx.play("close")
+		return
+	if bestiary_panel != null:
+		bestiary_panel.queue_free()
+	bestiary_panel = _panel(PAPER_LIGHT)
+	bestiary_panel.visible = false
+	root.add_child(bestiary_panel)
+	_center(bestiary_panel)
+	var vb := VBoxContainer.new()
+	vb.add_theme_constant_override("separation", 6)
+	vb.custom_minimum_size = Vector2(760, 0)
+	bestiary_panel.add_child(vb)
+	var met := 0
+	for k in Monster.TYPES:
+		if main.bestiary.has(k):
+			met += 1
+	vb.add_child(_label("Bestiary   %d / %d met" % [met, Monster.TYPES.size()], 32))
+	var sc := ScrollContainer.new()
+	sc.custom_minimum_size = Vector2(760, 430)
+	sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	vb.add_child(sc)
+	var grid := GridContainer.new()
+	grid.columns = 2
+	grid.add_theme_constant_override("h_separation", 10)
+	grid.add_theme_constant_override("v_separation", 8)
+	sc.add_child(grid)
+	for k in Monster.TYPES:
+		grid.add_child(_beast_card(k))
+	var cl := _button("Close (Esc)")
+	cl.pressed.connect(close_all)
+	vb.add_child(cl)
+	_vis(bestiary_panel, true)
+	Sfx.play("open")
+
+
+func _beast_card(k: String) -> Control:
+	var t: Dictionary = Monster.TYPES[k]
+	var e: Dictionary = main.bestiary.get(k, {})
+	var known := not e.is_empty()
+	var card := PanelContainer.new()
+	card.add_theme_stylebox_override("panel", _style(NOTE, 2, 4))
+	card.custom_minimum_size = Vector2(364, 96)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 10)
+	card.add_child(row)
+	var art := TextureRect.new()
+	art.custom_minimum_size = Vector2(80, 80)
+	art.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	art.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	if t.has("sprite"):
+		art.texture = load("res://assets/beasts/" + String(t["sprite"]))
+		if not known:
+			art.modulate = Color(0.1, 0.07, 0.04, 0.85)
+	row.add_child(art)
+	var col := VBoxContainer.new()
+	col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(col)
+	col.add_child(_label(Monster.name_of(k, Game.cute()) if known else "???", 22))
+	if known:
+		var drops: PackedStringArray = []
+		for g in t["drops"]:
+			drops.append("%d %s" % [int(t["drops"][g]), String(Economy.GOODS[g]["name"]).to_lower()])
+		var info := _label("HP %d, bite %d.  Met %s, beaten %d.
+Drops: %s%s" % [int(t["hp"]), int(t["dmg"]), "often" if int(e["seen"]) > 20 else "now and then", int(e["kills"]), ", ".join(drops), ("
+Dire form seen!" if int(e["best_tier"]) >= 2 else "")], 15, INK.lightened(0.15))
+		info.autowrap_mode = TextServer.AUTOWRAP_WORD
+		info.custom_minimum_size = Vector2(250, 0)
+		col.add_child(info)
+	else:
+		col.add_child(_label("Not met yet.", 15, INK.lightened(0.4)))
+	return card
 
 
 func open_shop(id: String) -> void:
 	if id == "" or not Economy.shops.has(id):
 		return
+	if prices_panel != null:
+		_vis(prices_panel, false)
 	shop_id = id
 	_rebuild_shop()
 	Sfx.play("door")
@@ -654,16 +943,16 @@ func close_shop() -> void:
 	if shop_id != "":
 		Sfx.play("close")
 	shop_id = ""
-	shop_panel.visible = false
+	_vis(shop_panel, false)
 
 
 func _rebuild_shop() -> void:
 	for c in shop_panel.get_children():
 		c.queue_free()
 	if shop_id == "" or main == null:
-		shop_panel.visible = false
+		_vis(shop_panel, false)
 		return
-	shop_panel.visible = true
+	_vis(shop_panel, true)
 	var s: Dictionary = Economy.shops[shop_id]
 	var vb := VBoxContainer.new()
 	vb.add_theme_constant_override("separation", 8)
@@ -785,7 +1074,7 @@ func _on_economy() -> void:
 
 func _build_dialog() -> void:
 	dialog_panel = _panel(NOTE)
-	dialog_panel.visible = false
+	_vis(dialog_panel, false)
 	root.add_child(dialog_panel)
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 12)
@@ -805,7 +1094,7 @@ func _build_dialog() -> void:
 
 
 func open_dialog(n: Npc, text: String, opts: Array) -> void:
-	dialog_panel.visible = true
+	_vis(dialog_panel, true)
 	_dialog_name.text = "%s, %s" % [n.display_name, n.job_title.to_lower() if n.job_id != "" else "townsperson"]
 	set_dialog_text(text, opts)
 
@@ -867,8 +1156,70 @@ func pick_choice(n: int) -> void:
 	main.dialog_choice(_dialog_choices[n - 1])
 
 
+## Panels pop in (a little scale, tilt and fade) and drop away when closed, as
+## if a card were slapped on the table and then pulled off it.
+func _vis(p: Control, on: bool) -> void:
+	if p == null:
+		return
+	var closing: bool = p.get_meta("closing") if p.has_meta("closing") else false
+	# a second close while the first is still animating must not kill its tween
+	# (that left the panel visible forever and froze the player)
+	if not on and closing:
+		return
+	if p.has_meta("tw"):
+		var old: Tween = p.get_meta("tw")
+		if old != null and old.is_valid():
+			old.kill()
+	if on:
+		if p.visible and not closing:
+			return
+		p.set_meta("closing", false)
+		p.visible = true
+		if DisplayServer.get_name() == "headless" or not p.is_inside_tree():
+			return
+		p.modulate.a = 0.0
+		_pop_in.call_deferred(p)
+	else:
+		if not p.visible or closing:
+			return
+		if DisplayServer.get_name() == "headless" or not p.is_inside_tree():
+			p.visible = false
+			return
+		p.set_meta("closing", true)
+		p.pivot_offset = p.size * 0.5
+		var base: Vector2 = p.position
+		var tw := p.create_tween()
+		p.set_meta("tw", tw)
+		tw.set_parallel(true)
+		tw.tween_property(p, "rotation", 0.05, 0.2).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+		tw.tween_property(p, "position:y", base.y + 60.0, 0.2).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+		tw.tween_property(p, "scale", Vector2(0.92, 0.92), 0.2)
+		tw.tween_property(p, "modulate:a", 0.0, 0.18)
+		tw.chain().tween_callback(func() -> void:
+			p.visible = false
+			p.set_meta("closing", false)
+			p.rotation = 0.0
+			p.scale = Vector2.ONE
+			p.modulate.a = 1.0
+			p.position = base)
+
+
+func _pop_in(p: Control) -> void:
+	if not is_instance_valid(p) or not p.visible:
+		return
+	p.pivot_offset = p.size * 0.5
+	p.rotation = -0.035
+	p.scale = Vector2(0.88, 0.88)
+	var tw := p.create_tween()
+	p.set_meta("tw", tw)
+	tw.set_parallel(true)
+	tw.tween_property(p, "scale", Vector2.ONE, 0.26).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tw.tween_property(p, "rotation", 0.0, 0.26).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tw.tween_property(p, "modulate:a", 1.0, 0.14)
+
+
 func close_dialog() -> void:
-	dialog_panel.visible = false
+	_vis(dialog_panel, false)
 	_dialog_choices = []
 
 
@@ -876,7 +1227,7 @@ func close_dialog() -> void:
 
 func _build_map() -> void:
 	map_panel = _panel(PAPER_LIGHT)
-	map_panel.visible = false
+	_vis(map_panel, false)
 	root.add_child(map_panel)
 	_center(map_panel)
 	var vb := VBoxContainer.new()
@@ -896,7 +1247,7 @@ func _build_map() -> void:
 func toggle_map() -> void:
 	var show := not map_panel.visible
 	close_all()
-	map_panel.visible = show
+	_vis(map_panel, show)
 	Sfx.play("open" if show else "close")
 
 
@@ -904,7 +1255,7 @@ func toggle_map() -> void:
 
 func _build_quests() -> void:
 	quest_panel = _panel(PAPER_LIGHT)
-	quest_panel.visible = false
+	_vis(quest_panel, false)
 	root.add_child(quest_panel)
 	_center(quest_panel)
 
@@ -926,11 +1277,25 @@ func toggle_quests() -> void:
 func _fill_quests(board: bool) -> void:
 	for c in quest_panel.get_children():
 		c.queue_free()
-	quest_panel.visible = true
+	_vis(quest_panel, true)
 	var vb := VBoxContainer.new()
 	vb.add_theme_constant_override("separation", 8)
 	vb.custom_minimum_size = Vector2(720, 0)
 	quest_panel.add_child(vb)
+	if not board:
+		var st: Story = main.story
+		vb.add_child(_label("Story: %s" % st.data.get("title", ""), 30))
+		var cur: Dictionary = st.current()
+		for ln in st.journal(main):
+			vb.add_child(_label(ln, 17))
+		if st.finished:
+			var pl := _label("The Crown is whole. New Game Plus %d: beasts are tougher." % st.plus, 17, Color(0.2, 0.4, 0.2))
+			vb.add_child(pl)
+		elif not cur.is_empty():
+			var cl := _label(("Now: " + st.goal_text(main)) if st.state == "active" else "Find the captain of %s to begin." % String(Economy.city_def(cur["city"]).get("name", "")), 17, Color(0.2, 0.4, 0.2))
+			cl.autowrap_mode = TextServer.AUTOWRAP_WORD
+			cl.custom_minimum_size = Vector2(700, 0)
+			vb.add_child(cl)
 	vb.add_child(_label("Quest board" if board else "Your quests", 34))
 	vb.add_child(_label("Rewards are held in escrow by the board: the giver pays in when you accept.", 16))
 	var q: Quests = main.quests
@@ -1009,7 +1374,7 @@ func _q_drop(qd: Dictionary) -> void:
 
 func _build_ledger() -> void:
 	ledger_panel = _panel()
-	ledger_panel.visible = false
+	_vis(ledger_panel, false)
 	root.add_child(ledger_panel)
 	var lv := VBoxContainer.new()
 	lv.add_theme_constant_override("separation", 10)
@@ -1061,7 +1426,7 @@ func _settle_line() -> String:
 func toggle_ledger() -> void:
 	var show := not ledger_panel.visible
 	close_all()
-	ledger_panel.visible = show
+	_vis(ledger_panel, show)
 	_ledger_t = 0.0
 	Sfx.play("open" if show else "close")
 
@@ -1103,20 +1468,34 @@ func _ledger_text(world) -> String:
 
 # ---------- shared ----------
 
+func toggle_skills() -> void:
+	menus.toggle_skills()
+
+
+func toggle_pause() -> void:
+	menus.toggle_pause()
+
+
 func close_all() -> void:
 	close_shop()
-	map_panel.visible = false
-	quest_panel.visible = false
-	ledger_panel.visible = false
+	if menus != null and menus.skills_panel != null:
+		_vis(menus.skills_panel, false)
+	if bestiary_panel != null:
+		_vis(bestiary_panel, false)
+	if prices_panel != null:
+		_vis(prices_panel, false)
+	_vis(map_panel, false)
+	_vis(quest_panel, false)
+	_vis(ledger_panel, false)
 
 
 ## Big popups hide the tutorial card so they never overlap.
 func blocking_overlay() -> bool:
-	return shop_panel.visible or map_panel.visible or quest_panel.visible or dialog_panel.visible
+	return (menus != null and menus.any_open()) or _death_open or (bestiary_panel != null and bestiary_panel.visible) or (prices_panel != null and prices_panel.visible) or shop_panel.visible or map_panel.visible or quest_panel.visible or dialog_panel.visible
 
 
 func blocking() -> bool:
-	return shop_panel.visible or dialog_panel.visible or map_panel.visible or quest_panel.visible or title_panel.visible
+	return (menus != null and menus.any_open()) or _death_open or (bestiary_panel != null and bestiary_panel.visible) or (prices_panel != null and prices_panel.visible) or shop_panel.visible or dialog_panel.visible or map_panel.visible or quest_panel.visible or title_panel.visible
 
 
 func refresh(world, delta: float) -> void:
@@ -1138,21 +1517,34 @@ func refresh(world, delta: float) -> void:
 	if not started:
 		return
 	hp_g.set_value(world.player["hp"], world.player["max_hp"])
-	st_g.set_value(world.player["stamina"], 100.0)
+	st_g.set_value(world.player["stamina"], world.player["max_stamina"])
 	st_g.tired = world.player["tired"]
-	ink_g.set_value(world.player["ink"], 100.0)
+	ink_g.set_value(world.player["ink"], world.player["max_ink"])
+	xp_g.set_value(world.career.xp, world.career.needed())
+	lv_label.text = "Lv %d" % world.career.level
+	var jt: String = world.career.status_text(world)
+	job_label.text = jt
+	job_label.visible = jt != ""
 	if medal_face.texture == null and world.player_view != null:
 		medal_face.texture = _portrait(world.player_view)
 	var coins := int(Economy.wallets["player"]["coins"])
 	if coins != _shown_coins:
 		if _shown_coins >= 0 and coins > _shown_coins:
 			_coin_fly(mini(8, coins - _shown_coins))
+		if _shown_coins >= 0:
+			# a running "+12" / "-8" beside the purse for each change
+			_delta_acc = (_delta_acc if _delta_t > 0.0 else 0) + (coins - _shown_coins)
+			_delta_t = 1.6
+			coin_delta.text = ("%+d" % _delta_acc)
+			coin_delta.add_theme_color_override("font_color", Color(0.18, 0.5, 0.2) if _delta_acc >= 0 else Color(0.75, 0.2, 0.15))
 		_shown_coins = coins
 		coin_label.text = str(coins)
 		coin_label.pivot_offset = coin_label.size * 0.5
 		var tw := coin_label.create_tween()
 		tw.tween_property(coin_label, "scale", Vector2(1.25, 1.25), 0.08)
 		tw.tween_property(coin_label, "scale", Vector2.ONE, 0.15)
+	_delta_t = maxf(0.0, _delta_t - delta)
+	coin_delta.modulate.a = clampf(_delta_t / 0.5, 0.0, 1.0)
 	var items: Dictionary = Economy.wallets["player"]["items"]
 	var sig := str(items)
 	if sig != _pack_sig:
@@ -1170,18 +1562,26 @@ func refresh(world, delta: float) -> void:
 	compass.position = Vector2(vs.x * 0.5 - compass.size.x * 0.5, 12)
 	compass.queue_redraw()
 	clock_label.text = "Day %d   %02d:%02d" % [world.day_number(), int(world.hour), int(fmod(world.hour, 1.0) * 60.0)]
+	var ev: String = world.event_summary()
+	if ev != "":
+		clock_label.text += "   " + ev
 	clock_tag.reset_size()
 	clock_tag.position = Vector2(vs.x * 0.5 - clock_tag.size.x * 0.5, 54)
 	minimap.position = Vector2(vs.x - minimap.size.x - 14, 10)
 	minimap.queue_redraw()
 	chain_chip.refresh()
+	menus.update(world, vs)
 	chain_chip.position = Vector2(vs.x - chain_chip.size.x - 18, minimap.position.y + minimap.size.y + 2)
 
 	var q: Dictionary = world.quests.current()
-	tracker.visible = not q.is_empty()
+	var sc: Dictionary = world.story.current()
+	tracker.visible = not q.is_empty() or (not sc.is_empty() and world.story.state == "active")
 	if not q.is_empty():
 		tracker_title.text = q["title"]
 		tracker_text.text = "%s\n%d coins on completion" % [world.quests.progress_text(q), int(q["reward"])]
+	elif tracker.visible:
+		tracker_title.text = "Story: %s" % sc["title"]
+		tracker_text.text = world.story.goal_text(world) + ("\nReturn to the captain!" if world.story.goal_met(world) else "")
 	tracker.position = Vector2(vs.x - tracker.size.x - 18, chain_chip.position.y + chain_chip.size.y + 12)
 
 	# only fresh messages show, as one paper slip that fades away
@@ -1196,18 +1596,20 @@ func refresh(world, delta: float) -> void:
 		var age := now - float(log_times[log_times.size() - 1])
 		log_panel.modulate.a = clampf((LOG_SECS - age) / 1.0, 0.0, 1.0)
 		log_panel.reset_size()
-	log_panel.position = Vector2(16, vs.y - log_panel.size.y - 18)
+	log_panel.position = Vector2(16, vs.y - log_panel.size.y - (360.0 if Game.touch else 18.0))
 	_keys_t -= delta
 	keys_panel.modulate.a = clampf(_keys_t, 0.0, 1.0)
 	keys_panel.visible = _keys_t > 0.0
 	keys_panel.reset_size()
 	keys_panel.position = Vector2(vs.x - keys_panel.size.x - 18, vs.y - keys_panel.size.y - 16)
+	if Game.touch:
+		keys_panel.position = Vector2(vs.x * 0.5 - keys_panel.size.x * 0.5, 96)
 	prompt_label.text = world.prompt
 	prompt_panel.visible = world.prompt != ""
 	prompt_panel.reset_size()
-	prompt_panel.position = Vector2(vs.x * 0.5 - prompt_panel.size.x * 0.5, vs.y - 120)
+	prompt_panel.position = Vector2(vs.x * 0.5 - prompt_panel.size.x * 0.5, vs.y - (190 if keys_panel.visible else 120) - (80.0 if menus.hotbar.visible else 0.0) - (60.0 if Game.touch else 0.0))
 	dialog_panel.position = Vector2(vs.x * 0.5 - dialog_panel.size.x * 0.5, vs.y - dialog_panel.size.y - 40)
-	banner_panel.position = Vector2(vs.x * 0.5 - banner_panel.size.x * 0.5, 120)
+	banner_panel.position = Vector2(vs.x * 0.5 - banner_panel.size.x * 0.5, 215)
 
 	_fog_t -= delta
 	if _fog_t <= 0.0:
@@ -1220,6 +1622,47 @@ func refresh(world, delta: float) -> void:
 			ledger_label.text = _ledger_text(world)
 			_settle_status.text = _settle_line()
 		ledger_panel.position = Vector2(vs.x * 0.5 - ledger_panel.size.x * 0.5, 80)
+
+
+## The knock-out card: what hit you, what it cost, where you wake up. Shown
+## after the tear effect; "Get up" runs `on_ok` (respawn).
+func show_death(info: Dictionary, on_ok: Callable) -> void:
+	if _death != null:
+		_death.queue_free()
+	_death_open = true
+	_death = _panel(NOTE, 1)
+	var vb := VBoxContainer.new()
+	vb.add_theme_constant_override("separation", 8)
+	_death.add_child(vb)
+	var t := _label("Knocked out", 40, Color(0.7, 0.18, 0.12))
+	t.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	vb.add_child(t)
+	var lines := ["%s got the better of you." % str(info["by"]),
+		"The guards kept %d coins as a fee." % int(info["lost"]) if int(info["lost"]) > 0 else "You had nothing to lose, so the guards kept nothing.",
+		"You will wake up in %s." % str(info["town"])]
+	for l in lines:
+		var lb := _label(l, 20)
+		lb.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		vb.add_child(lb)
+	var ok := _button("Get up", GOLD)
+	ok.add_theme_font_size_override("font_size", 28)
+	ok.pressed.connect(func() -> void:
+		_death_open = false
+		_death.queue_free()
+		_death = null
+		on_ok.call())
+	vb.add_child(ok)
+	root.add_child(_death)
+	_death.modulate.a = 0.0
+	_death.reset_size()
+	var vs := root.get_viewport_rect().size
+	_death.position = ((vs - _death.size) * 0.5).floor()
+	_death.pivot_offset = _death.size * 0.5
+	_death.scale = Vector2(0.8, 0.8)
+	var tw := _death.create_tween()
+	tw.tween_interval(1.1 if DisplayServer.get_name() != "headless" else 0.0)
+	tw.tween_property(_death, "modulate:a", 1.0, 0.3)
+	tw.parallel().tween_property(_death, "scale", Vector2.ONE, 0.35).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 
 
 ## Little coins fly from the hero to the purse when money comes in.
@@ -1239,6 +1682,10 @@ func _coin_fly(n: int) -> void:
 		tw.tween_property(tr, "position", mid, 0.25).set_ease(Tween.EASE_OUT)
 		tw.tween_property(tr, "position", to, 0.3).set_ease(Tween.EASE_IN)
 		tw.tween_callback(tr.queue_free)
+
+
+func reveal_town(tn: Dictionary) -> void:
+	_reveal((tn["rect"] as Rect2).get_center(), 18)
 
 
 func _reveal(p: Vector2, r := 16) -> void:
@@ -1296,8 +1743,25 @@ class MapView:
 		draw_texture_rect_region(hud.map_tex, rect, v)
 		draw_texture_rect_region(hud.fog_tex, rect, v)
 		var main = hud.main
-		var town := Rect2(_pt(Vector2(-TILE_PX(), -TILE_PX())), _pt(Vector2(TownGen.COLS + 1, TownGen.ROWS + 1) * World.TILE) - _pt(Vector2(-TILE_PX(), -TILE_PX())))
-		draw_rect(town, Color(0.86, 0.76, 0.60, 0.6))
+		# roads between the cities, then each city's walls
+		for road in main.world.roads:
+			var pts := PackedVector2Array()
+			for q in road:
+				pts.append(_pt(Vector2(q) * World.TILE))
+			if pts.size() >= 2:
+				draw_polyline(pts, Color(0.55, 0.40, 0.25, 0.8), 3.0 if not mini else 2.0, true)
+		var font0 := get_theme_default_font()
+		for tn in main.towns:
+			var tr: Rect2 = tn["rect"]
+			var a0 := _pt(tr.position)
+			var e0 := _pt(tr.end)
+			draw_rect(Rect2(a0, e0 - a0), Color(0.86, 0.76, 0.60, 0.6))
+			draw_rect(Rect2(a0, e0 - a0), Color(0.20, 0.13, 0.08, 0.6), false, 1.5)
+			if not mini:
+				var nm: String = tn["name"]
+				var cx := (a0.x + e0.x) * 0.5 - 70.0
+				draw_string_outline(font0, Vector2(cx, a0.y - 6.0), nm, HORIZONTAL_ALIGNMENT_CENTER, 140, 18, 6, Hud.NOTE)
+				draw_string(font0, Vector2(cx, a0.y - 6.0), nm, HORIZONTAL_ALIGNMENT_CENTER, 140, 18, Hud.INK)
 		for b in main.buildings:
 			var r: Rect2 = b["rect"]
 			var a := _pt(r.position)
@@ -1321,6 +1785,12 @@ class MapView:
 					draw_string(font, p + Vector2(-60, 26), l["name"], HORIZONTAL_ALIGNMENT_CENTER, 120, 16, Hud.INK)
 			elif not mini:
 				draw_string(font, p + Vector2(-10, 6), "?", HORIZONTAL_ALIGNMENT_CENTER, 20, 18, Hud.INK)
+		for n in main.npcs:
+			if n is Merchant:
+				var np := _pt(n.pos)
+				if rect.has_point(np):
+					draw_rect(Rect2(np - Vector2(3, 3), Vector2(6, 6)), Hud.GOLD)
+					draw_rect(Rect2(np - Vector2(3, 3), Vector2(6, 6)), Hud.INK, false, 1.2)
 		if mini:
 			for m in main.monsters:
 				var mp := _pt(m.pos)

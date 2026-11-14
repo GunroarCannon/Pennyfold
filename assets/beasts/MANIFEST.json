@@ -1,0 +1,476 @@
+{
+ "kept": {
+  "BristlePig_01.png": [
+   265,
+   221
+  ],
+  "Bug_01.png": [
+   181,
+   264
+  ],
+  "Bug_02.png": [
+   193,
+   266
+  ],
+  "Bug_03.png": [
+   184,
+   267
+  ],
+  "Bug_04.png": [
+   250,
+   265
+  ],
+  "ConcerningApe.png": [
+   250,
+   263
+  ],
+  "Dreg_01.png": [
+   76,
+   181
+  ],
+  "Dreg_02.png": [
+   100,
+   177
+  ],
+  "Necromaster_01.png": [
+   256,
+   262
+  ],
+  "Necromaster_Thrall_01.png": [
+   127,
+   259
+  ],
+  "Necromaster_Thrall_02.png": [
+   130,
+   259
+  ],
+  "Necromaster_Thrall_03.png": [
+   117,
+   259
+  ],
+  "air_elemental.png": [
+   153,
+   249
+  ],
+  "air_elemental_03.png": [
+   208,
+   259
+  ],
+  "ankylo.png": [
+   265,
+   257
+  ],
+  "beastman_01.png": [
+   223,
+   266
+  ],
+  "beastman_02.png": [
+   148,
+   266
+  ],
+  "beastman_03.png": [
+   180,
+   259
+  ],
+  "big_cat_black_01.png": [
+   200,
+   261
+  ],
+  "big_cat_orange_01.png": [
+   201,
+   262
+  ],
+  "bird_01.png": [
+   148,
+   214
+  ],
+  "bug_05.png": [
+   264,
+   194
+  ],
+  "bug_06.png": [
+   267,
+   244
+  ],
+  "bugbird_01.png": [
+   185,
+   235
+  ],
+  "crawler_01.png": [
+   269,
+   263
+  ],
+  "crawler_02.png": [
+   143,
+   173
+  ],
+  "crocodog_01.png": [
+   265,
+   180
+  ],
+  "crocodog_02.png": [
+   267,
+   180
+  ],
+  "dragon_huge_black_01.png": [
+   193,
+   258
+  ],
+  "dragon_huge_blue_01.png": [
+   196,
+   258
+  ],
+  "dragon_huge_green_01.png": [
+   198,
+   259
+  ],
+  "dragon_huge_red_01.png": [
+   195,
+   258
+  ],
+  "dragon_large_black_01.png": [
+   216,
+   258
+  ],
+  "dragon_large_blue_01.png": [
+   221,
+   259
+  ],
+  "dragon_large_green_01.png": [
+   218,
+   258
+  ],
+  "dragon_large_red_01.png": [
+   218,
+   260
+  ],
+  "dragon_medium_black_01.png": [
+   187,
+   256
+  ],
+  "dragon_medium_blue_01.png": [
+   188,
+   256
+  ],
+  "dragon_medium_green_01.png": [
+   188,
+   257
+  ],
+  "dragon_medium_red_01.png": [
+   189,
+   257
+  ],
+  "dragon_small_black_01.png": [
+   202,
+   93
+  ],
+  "dragon_small_blue_01.png": [
+   202,
+   94
+  ],
+  "dragon_small_green_01.png": [
+   199,
+   93
+  ],
+  "dragon_small_red_01.png": [
+   202,
+   94
+  ],
+  "earth_elemental_02.png": [
+   267,
+   244
+  ],
+  "earth_elemental_03.png": [
+   150,
+   270
+  ],
+  "experiment_01.png": [
+   262,
+   264
+  ],
+  "experiment_02.png": [
+   161,
+   205
+  ],
+  "experiment_03.png": [
+   224,
+   267
+  ],
+  "flayer_01.png": [
+   166,
+   260
+  ],
+  "flayer_02.png": [
+   144,
+   260
+  ],
+  "float_eye_01.png": [
+   173,
+   264
+  ],
+  "float_eye_02.png": [
+   230,
+   264
+  ],
+  "float_eye_03.png": [
+   139,
+   267
+  ],
+  "flyrant_01.png": [
+   156,
+   249
+  ],
+  "golem_acid.png": [
+   199,
+   268
+  ],
+  "golem_armor.png": [
+   266,
+   265
+  ],
+  "golem_blood.png": [
+   186,
+   265
+  ],
+  "golem_magma.png": [
+   263,
+   258
+  ],
+  "golem_molten.png": [
+   177,
+   264
+  ],
+  "golem_mud.png": [
+   189,
+   263
+  ],
+  "mad_horse_01.png": [
+   214,
+   267
+  ],
+  "mad_horse_02.png": [
+   211,
+   268
+  ],
+  "mantis_01.png": [
+   263,
+   235
+  ],
+  "mummy_01.png": [
+   123,
+   170
+  ],
+  "mummy_02.png": [
+   141,
+   176
+  ],
+  "mushroom_01.png": [
+   123,
+   177
+  ],
+  "mushroom_02.png": [
+   181,
+   223
+  ],
+  "mushroom_03.png": [
+   138,
+   203
+  ],
+  "ogre_01.png": [
+   241,
+   267
+  ],
+  "pede_01.png": [
+   158,
+   201
+  ],
+  "sahagin_01.png": [
+   144,
+   189
+  ],
+  "sahagin_02.png": [
+   197,
+   245
+  ],
+  "sahagin_03.png": [
+   213,
+   262
+  ],
+  "sahagin_04.png": [
+   141,
+   259
+  ],
+  "scorpion_01.png": [
+   265,
+   218
+  ],
+  "shade_01.png": [
+   247,
+   265
+  ],
+  "shark_01.png": [
+   236,
+   266
+  ],
+  "skeleton_01.png": [
+   175,
+   195
+  ],
+  "skeleton_02.png": [
+   181,
+   185
+  ],
+  "skeleton_03.png": [
+   177,
+   259
+  ],
+  "snake_01.png": [
+   198,
+   150
+  ],
+  "snap_fish_01.png": [
+   145,
+   259
+  ],
+  "spider_01.png": [
+   267,
+   214
+  ],
+  "twin_head_01.png": [
+   265,
+   169
+  ],
+  "water_elemental_01.png": [
+   251,
+   262
+  ],
+  "wolf_01.png": [
+   204,
+   179
+  ],
+  "worm_01.png": [
+   183,
+   265
+  ],
+  "worm_02.png": [
+   183,
+   266
+  ],
+  "worm_03.png": [
+   166,
+   221
+  ],
+  "zombie_01.png": [
+   135,
+   181
+  ],
+  "zombie_02.png": [
+   125,
+   223
+  ]
+ },
+ "dropped": {
+  "Float_Armour_01.png": "sci-fi, does not fit the setting",
+  "Float_Armour_02.png": "sci-fi, does not fit the setting",
+  "Float_Armour_03.png": "sci-fi, does not fit the setting",
+  "Float_Armour_04.png": "sci-fi, does not fit the setting",
+  "War_Machine_01.png": "sci-fi, does not fit the setting",
+  "War_Machine_02.png": "sci-fi, does not fit the setting",
+  "air_elemental_02.png": "female-figure or revealing art, dropped to keep the game family friendly",
+  "air_elemental_04.png": "female-figure or revealing art, dropped to keep the game family friendly",
+  "ancient_sentry_01.png": "human or humanoid townsfolk, not a monster for this game",
+  "asp_girl_b.png": "suggestive or not a creature",
+  "battler_woman_01.png": "suggestive or not a creature",
+  "battler_woman_02.png": "suggestive or not a creature",
+  "battler_woman_03.png": "suggestive or not a creature",
+  "battler_woman_04.png": "suggestive or not a creature",
+  "battler_woman_05.png": "suggestive or not a creature",
+  "battler_woman_06.png": "suggestive or not a creature",
+  "battler_woman_07.png": "suggestive or not a creature",
+  "battler_woman_08.png": "suggestive or not a creature",
+  "battler_woman_09.png": "suggestive or not a creature",
+  "battler_woman_10.png": "suggestive or not a creature",
+  "beachgoer_01.png": "suggestive or not a creature",
+  "beachgoer_02.png": "suggestive or not a creature",
+  "beachgoer_03.png": "suggestive or not a creature",
+  "beachgoer_04.png": "suggestive or not a creature",
+  "beetle_mech_01.png": "sci-fi, does not fit the setting",
+  "dark_elf_01.png": "human or humanoid townsfolk, not a monster for this game",
+  "dark_elf_02.png": "human or humanoid townsfolk, not a monster for this game",
+  "darkelf_king.png": "human or humanoid townsfolk, not a monster for this game",
+  "demoness_01.png": "suggestive or not a creature",
+  "earth_elemental_01.png": "female-figure or revealing art, dropped to keep the game family friendly",
+  "evil_elf_01.png": "human or humanoid townsfolk, not a monster for this game",
+  "evil_elf_02.png": "human or humanoid townsfolk, not a monster for this game",
+  "evil_elf_03.png": "human or humanoid townsfolk, not a monster for this game",
+  "evil_elf_04.png": "human or humanoid townsfolk, not a monster for this game",
+  "evil_elf_05.png": "human or humanoid townsfolk, not a monster for this game",
+  "evil_empire_boss_01.png": "sci-fi, does not fit the setting",
+  "evil_empire_enforcer.png": "sci-fi, does not fit the setting",
+  "evil_empire_float_eye.png": "sci-fi, does not fit the setting",
+  "evil_empire_soldier.png": "sci-fi, does not fit the setting",
+  "evil_empire_soldier_2.png": "sci-fi, does not fit the setting",
+  "evil_empire_soldier_3.png": "sci-fi, does not fit the setting",
+  "evil_empire_warlock_01.png": "sci-fi, does not fit the setting",
+  "evil_empire_warlock_02.png": "sci-fi, does not fit the setting",
+  "evil_empire_warlock_03.png": "sci-fi, does not fit the setting",
+  "guard_01.png": "human or humanoid townsfolk, not a monster for this game",
+  "guard_02.png": "human or humanoid townsfolk, not a monster for this game",
+  "imp_01.png": "female-figure or revealing art, dropped to keep the game family friendly",
+  "imp_01b.png": "female-figure or revealing art, dropped to keep the game family friendly",
+  "imp_02.png": "female-figure or revealing art, dropped to keep the game family friendly",
+  "imp_03.png": "female-figure or revealing art, dropped to keep the game family friendly",
+  "koboglins.png": "human or humanoid townsfolk, not a monster for this game",
+  "medusa_01.png": "suggestive or not a creature",
+  "mix_match_girl_low_fi_01.png": "suggestive or not a creature",
+  "mix_match_girl_low_fi_02.png": "suggestive or not a creature",
+  "mix_match_girl_low_fi_04.png": "suggestive or not a creature",
+  "mix_match_girl_low_fi_05.png": "suggestive or not a creature",
+  "mix_match_girl_low_fi_06.png": "suggestive or not a creature",
+  "mix_match_girl_low_fi_07.png": "suggestive or not a creature",
+  "mix_match_girl_sc_fi_01.png": "suggestive or not a creature",
+  "mix_match_girl_sc_fi_02.png": "suggestive or not a creature",
+  "mix_match_girl_sc_fi_03.png": "suggestive or not a creature",
+  "pirate_01.png": "human or humanoid townsfolk, not a monster for this game",
+  "pixie_01.png": "suggestive or not a creature",
+  "pixie_02.png": "suggestive or not a creature",
+  "sci_fi_captain_01.png": "sci-fi, does not fit the setting",
+  "sci_fi_captain_02.png": "sci-fi, does not fit the setting",
+  "sci_fi_captain_03.png": "sci-fi, does not fit the setting",
+  "sci_fi_grunt_01.png": "sci-fi, does not fit the setting",
+  "sci_fi_grunt_02.png": "sci-fi, does not fit the setting",
+  "sci_fi_grunt_03.png": "sci-fi, does not fit the setting",
+  "scifi_commander_01.png": "sci-fi, does not fit the setting",
+  "scifi_commander_01_b.png": "sci-fi, does not fit the setting",
+  "scifi_commander_02.png": "sci-fi, does not fit the setting",
+  "scifi_commander_03.png": "sci-fi, does not fit the setting",
+  "scout_01.png": "human or humanoid townsfolk, not a monster for this game",
+  "sentry_01.png": "human or humanoid townsfolk, not a monster for this game",
+  "sentry_02.png": "human or humanoid townsfolk, not a monster for this game",
+  "spider_bot_01.png": "sci-fi, does not fit the setting",
+  "succubus_01.png": "suggestive or not a creature",
+  "succubus_02.png": "suggestive or not a creature",
+  "succubus_03.png": "suggestive or not a creature",
+  "succubus_04.png": "suggestive or not a creature",
+  "townsfolk_01.png": "human or humanoid townsfolk, not a monster for this game",
+  "townsfolk_02.png": "human or humanoid townsfolk, not a monster for this game",
+  "townsfolk_03.png": "human or humanoid townsfolk, not a monster for this game",
+  "townsfolk_04.png": "human or humanoid townsfolk, not a monster for this game",
+  "townsfolk_05.png": "human or humanoid townsfolk, not a monster for this game",
+  "townsfolk_06.png": "human or humanoid townsfolk, not a monster for this game",
+  "townsfolk_07.png": "human or humanoid townsfolk, not a monster for this game",
+  "undead_girls.png": "suggestive or not a creature",
+  "undead_girls_01.png": "suggestive or not a creature",
+  "undead_girls_02.png": "suggestive or not a creature",
+  "undead_girls_03.png": "suggestive or not a creature",
+  "undead_girls_04.png": "suggestive or not a creature",
+  "undead_girls_05.png": "suggestive or not a creature",
+  "undead_girls_06.png": "suggestive or not a creature",
+  "water_elemental_02.png": "female-figure or revealing art, dropped to keep the game family friendly",
+  "water_elemental_03.png": "female-figure or revealing art, dropped to keep the game family friendly",
+  "AngelaQuidam-illustrations-CrossroadChronicler1_CC-BY-NC/": "illustration sheets / painted battlers: not sprites for this game (and CC BY-NC)",
+  "AngelaQuidam-illustrations-CrossroadChronicler2_CC-by-nc/": "illustration sheets / painted battlers: not sprites for this game (and CC BY-NC)",
+  "AngelaQuidam-illustrations-CrossroadChronicler3_CC-by-nc/": "illustration sheets / painted battlers: not sprites for this game (and CC BY-NC)",
+  "paintedbattlers/": "illustration sheets / painted battlers: not sprites for this game (and CC BY-NC)"
+ }
+}

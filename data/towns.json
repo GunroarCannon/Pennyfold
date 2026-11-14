@@ -1,0 +1,67 @@
+{
+  "sunny": {
+    "shape": "green",
+    "tagline": "a village that grew around a green",
+    "legend": {
+      "title": "The Penny Oak",
+      "prop": "deadtree",
+      "text": [
+        "They say the first coin was buried under that oak, and the oak has been growing money-shaped leaves ever since.",
+        "Every harvest the old folk tie a thread to a low branch. The oak has never once been bare. Make of that what you will."
+      ]
+    },
+    "gossip": [
+      "The green is where we settle things. Mostly arguments about hens.",
+      "Come spring the whole village sweeps the lanes at once. It is the one day nobody is late."
+    ]
+  },
+  "copperhead": {
+    "shape": "hill",
+    "mountain": "n",
+    "tagline": "a mining town stacked up a mountainside",
+    "legend": {
+      "title": "The Weeping Arch",
+      "prop": "arch",
+      "text": [
+        "The arch at the top of the stair is older than the mine. Water drips from its keystone even in drought. The miners call it the Weeping Arch and touch it for luck.",
+        "Before the first shaft, a smith walked into the hill with a lantern and walked out three days later with copper in his beard. He never said where."
+      ]
+    },
+    "gossip": [
+      "Mind the stairs after rain. They are all wet and all rude.",
+      "The lower street is loud, the upper street is quiet, and the quiet ones own the mine."
+    ]
+  },
+  "saltmere": {
+    "shape": "river",
+    "tagline": "a port split by a slow river",
+    "legend": {
+      "title": "The Drowned Bell",
+      "prop": "pillar",
+      "text": [
+        "There is a bell at the bottom of the river. On foggy nights it rings, and the ferrymen row home early.",
+        "The stone by the bridge was set where the first boat landed. Sailors rub it before a voyage and say nothing, which is how you know it works."
+      ]
+    },
+    "gossip": [
+      "The tide comes up the river twice a day and never once on time.",
+      "Two banks, one town, one long-running quarrel about whose bridge it is."
+    ]
+  },
+  "highmarket": {
+    "shape": "ring",
+    "tagline": "a walled market town in perfect rings",
+    "legend": {
+      "title": "The Counting Stone",
+      "prop": "pillar",
+      "text": [
+        "In the middle of the square stands a stone with notches in it. Every honest deal in the town's history is said to be tallied there, one notch each. It is nearly full.",
+        "The walls were built in a single summer by merchants who could not agree on a gate. So there are four, and each toll is slightly different."
+      ]
+    },
+    "gossip": [
+      "Four gates, four tolls, one very confused donkey.",
+      "Everything here is round except the prices."
+    ]
+  }
+}

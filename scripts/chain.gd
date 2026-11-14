@@ -19,6 +19,11 @@ var day_log: Array = []
 var pending: Array = []
 var last_error := ""
 var genesis_done := false
+## The player's own wallet, once the relayer has confirmed it ("" = guest).
+var linked_account := ""
+var linked_ok := false
+## Human-readable result of the last link attempt, shown on the title screen.
+var link_note := ""
 var _queue: Array = []
 var _http: HTTPRequest
 var _busy := false
@@ -68,6 +73,24 @@ func attach(main: Node) -> void:
 	_send("GET", "/status", {}, "status")
 
 
+## Ask the relayer to check the player's wallet. Winnings paid to the player in
+## a settlement then go to this account. A failure only leaves the player a guest.
+func link(account: String) -> void:
+	linked_ok = false
+	linked_account = account
+	if account == "":
+		link_note = ""
+		status_changed.emit()
+		return
+	if not Game.valid_account(account):
+		link_note = "That does not look like a testnet account (name.testnet)."
+		status_changed.emit()
+		return
+	link_note = "Checking %s..." % account
+	status_changed.emit()
+	_send("POST", "/link", {"account_id": account}, "link")
+
+
 func _on_transfer(from_id: String, to_id: String, amount: int, memo: String) -> void:
 	if amount <= 0 or from_id == to_id:
 		return
@@ -98,7 +121,7 @@ func end_of_day(day: int) -> void:
 		status_changed.emit()
 		return
 	entry["status"] = "sending"
-	_send("POST", "/settle", {"day": day, "flows": flows, "ledger": _ledger()}, "settle", entry)
+	_send("POST", "/settle", {"day": day, "flows": flows, "ledger": _ledger(), "player_account": linked_account if linked_ok else ""}, "settle", entry)
 	status_changed.emit()
 
 
@@ -111,6 +134,11 @@ func _ledger() -> Dictionary:
 
 ## One short line for the HUD chip.
 func chip_text() -> String:
+	var who := ("  [%s]" % linked_account) if linked_ok else ""
+	return _chip_core() + who
+
+
+func _chip_core() -> String:
 	match mode:
 		"offline":
 			return "Offline ledger"
@@ -249,8 +277,15 @@ func _handle(job: Array, result: int, code: int, text: String) -> void:
 			root_account = String(data.get("account", ""))
 			Economy.message.emit("Town ledger linked to NEAR %s (%s)." % [network, mode])
 			_send("POST", "/genesis", {"ledger": _ledger()}, "genesis")
+			if Game.account != "" and not linked_ok:
+				link(Game.account)
 		"genesis":
 			genesis_done = true
+		"link":
+			linked_ok = bool(data.get("ok", false))
+			link_note = ("Linked %s. Winnings paid to you settle there." % linked_account) if linked_ok else str(data.get("note", "Could not verify that account. Playing as a guest."))
+			if not linked_ok:
+				linked_account = ""
 		"settle":
 			var entry: Dictionary = job[4]
 			entry["status"] = "settled" if data.get("ok", false) else "failed"
@@ -264,6 +299,9 @@ func _handle(job: Array, result: int, code: int, text: String) -> void:
 func _fail(job: Array, why: String) -> void:
 	last_error = why
 	print("[Chain] %s failed: %s (%s)" % [job[3], why, url])
+	if job[3] == "link":
+		linked_ok = false
+		link_note = "No relayer to check the account yet. Playing as a guest."
 	if job[3] == "status":
 		mode = "offline"
 	elif job[3] == "settle":

@@ -6,13 +6,13 @@ class_name Tutorial
 extends PanelContainer
 
 const STEPS := [
-	{"id": "move", "title": "Take a walk", "text": "Move with W A S D. Hold Shift to run, but running tires you out.", "keys": ["WASD", "Shift"]},
-	{"id": "strike", "title": "Strike!", "text": "Click (or J) to swing. Chain three clicks for a combo, the third hits hardest. Swing at a tree to chop wood.", "keys": ["Click", "J"]},
-	{"id": "dodge", "title": "Dodge", "text": "Press X to roll. You cannot be hurt mid-roll: dodge through an attack for a Perfect Dodge.", "keys": ["X"]},
-	{"id": "talk", "title": "Say hello", "text": "Walk up to a townsperson and press E to talk.", "keys": ["E"]},
-	{"id": "shop", "title": "Trade at a door", "text": "Stand at a shop door and press E. Every coin that changes hands is real ledger money.", "keys": ["E"]},
-	{"id": "ledger", "title": "Open the ledger", "text": "Press Tab. It lists every shop's coins, and everybody else's.", "keys": ["Tab"]},
-	{"id": "settle", "title": "Settle the day", "text": "In the ledger, press the gold button \"Settle day\". It bundles everything bought, sold and paid so far into NEAR transfers (buy or sell something first so there is something to send).", "keys": ["Tab"]},
+	{"id": "move", "title": "Take a walk", "text": "Move with W A S D. Hold Shift to run, but running tires you out.", "keys": ["WASD", "Shift"], "t_text": "Drag the stick at the lower left to walk. Push it all the way out (or tap the arrows disc) to run, but running tires you out.", "t_keys": ["Stick", "Arrows"]},
+	{"id": "strike", "title": "Strike!", "text": "Click (or J) to swing. Chain three clicks for a combo, the third hits hardest. Swing at a tree to chop wood.", "keys": ["Click", "J"], "t_text": "Tap the big sword disc to swing. Chain three taps for a combo, the third hits hardest. Swing at a tree to chop wood.", "t_keys": ["Sword"]},
+	{"id": "dodge", "title": "Dodge", "text": "Press X to roll. You cannot be hurt mid-roll: dodge through an attack for a Perfect Dodge.", "keys": ["X"], "t_text": "Tap the swirl disc to roll. You cannot be hurt mid-roll: dodge through an attack for a Perfect Dodge.", "t_keys": ["Swirl"]},
+	{"id": "talk", "title": "Say hello", "text": "Walk up to a townsperson and press E to talk.", "keys": ["E"], "t_text": "Walk up to a townsperson and tap the speech bubble disc to talk.", "t_keys": ["Bubble"]},
+	{"id": "shop", "title": "Trade at a door", "text": "Stand at a shop door and press E. Every coin that changes hands is real ledger money.", "keys": ["E"], "t_text": "Stand at a shop door and tap the speech bubble disc. Every coin that changes hands is real ledger money.", "t_keys": ["Bubble"]},
+	{"id": "ledger", "title": "Open the ledger", "text": "Press Tab. It lists every shop's coins, and everybody else's.", "keys": ["Tab"], "t_text": "Tap the book disc at the top right. It lists every shop's coins, and everybody else's.", "t_keys": ["Book"]},
+	{"id": "settle", "title": "Settle the day", "text": "In the ledger, press the gold button \"Settle day\". It bundles everything bought, sold and paid so far into NEAR transfers (buy or sell something first so there is something to send).", "keys": ["Tab"], "t_text": "In the ledger, tap the gold button \"Settle day\". It bundles everything bought, sold and paid so far into NEAR transfers (buy or sell something first so there is something to send).", "t_keys": ["Book"]},
 ]
 
 var hud: Hud
@@ -73,11 +73,11 @@ func _init(p_hud: Hud) -> void:
 func _show_step() -> void:
 	var s: Dictionary = STEPS[idx]
 	_title.text = s["title"]
-	_text.text = s["text"]
+	_text.text = s["t_text"] if Game.touch and s.has("t_text") else s["text"]
 	_count.text = "%d/%d" % [idx + 1, STEPS.size()]
 	for c in _keys.get_children():
 		c.queue_free()
-	for k in s["keys"]:
+	for k in (s["t_keys"] if Game.touch and s.has("t_keys") else s["keys"]):
 		# plain handwritten keys, underlined like the key strip at the bottom
 		var cap := PanelContainer.new()
 		var cs := StyleBoxFlat.new()

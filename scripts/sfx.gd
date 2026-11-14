@@ -10,12 +10,24 @@ const GROUPS := {
 	"hit": [["hit", "impact", "chop"], -4.0, 0.12],
 	"hurt": [["hurt"], -5.0, 0.06],
 	"boom": [["boom", "slam"], -5.0, 0.08],
-	"swing": [["paper_whoosh", "knifeSlice"], -9.0, 0.15],
-	"jump": [["spring", "boing_soft"], -10.0, 0.1],
+	"swing": [["fx_swing1", "fx_swing2", "fx_swing3"], -9.0, 0.12],
+	"fire": [["fx_fire_launch1", "fx_fire_launch2", "fx_fire_launch3"], -6.0, 0.08],
+	"fire_hit": [["fx_fire_hit1", "fx_fire_hit2", "fx_fire_hit3"], -5.0, 0.08],
+	"ice": [["fx_ice_launch1", "fx_ice_launch2", "fx_ice_launch3"], -6.0, 0.08],
+	"ice_hit": [["fx_ice_hit1", "fx_ice_hit2", "fx_ice_hit3"], -5.0, 0.08],
+	"zap": [["fx_zap_launch1", "fx_zap_launch2", "fx_zap_launch3"], -6.0, 0.06],
+	"zap_hit": [["fx_zap_hit1", "fx_zap_hit2", "fx_zap_hit3"], -6.0, 0.06],
+	"heal": [["fx_heal1", "fx_heal2"], -5.0, 0.04],
+	"shield": [["fx_shield1", "fx_shield2"], -6.0, 0.04],
+	"summon": [["fx_summon"], -5.0, 0.04],
+	"vanish": [["fx_vanish"], -6.0, 0.04],
+	"charge": [["fx_charge"], -8.0, 0.04],
+	"blade": [["fx_sword_hit1", "fx_sword_hit2", "fx_sword_hit3"], -6.0, 0.1],
+	"jump": [["soft_pop2", "soft_pop3"], -9.0, 0.18],
 	"land": [["land", "slam_light"], -10.0, 0.1],
 	"step": [["footstep00", "footstep01", "footstep02", "footstep03", "footstep04"], -20.0, 0.1],
 	"pop": [["soft_pop1", "soft_pop2", "soft_pop3"], -8.0, 0.12],
-	"beam": [["chime_up", "spring"], -8.0, 0.05],
+	"beam": [["chime_up"], -8.0, 0.05],
 	"shatter": [["shatter", "wood_snap"], -6.0, 0.08],
 	"quest": [["fanfare"], -6.0, 0.0],
 	"good": [["good_pluck"], -7.0, 0.05],
@@ -48,6 +60,21 @@ func _ready() -> void:
 		var p := AudioStreamPlayer.new()
 		add_child(p)
 		_players.append(p)
+
+
+## Where the player (the ears) is, in world units. Main keeps it current.
+var listener := Vector3.ZERO
+## Sounds from further than this are not played at all; closer ones fade.
+const HEAR := 16.0
+
+
+## A sound that happens somewhere in the world: silent when far, quieter when
+## not near. Use this for anything an NPC or monster does.
+func play_at(name: String, pos: Vector3, volume := 0.0, min_gap := 0.03) -> void:
+	var d := Vector2(pos.x - listener.x, pos.z - listener.z).length()
+	if d > HEAR:
+		return
+	play(name, volume - 14.0 * clampf(d / HEAR, 0.0, 1.0), min_gap)
 
 
 ## Plays a sound by group name. volume adds dB; min_gap (seconds) drops a

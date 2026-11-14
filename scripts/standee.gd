@@ -12,7 +12,7 @@ const INK := Color(0.17, 0.11, 0.06)
 const LAYER := 0.02
 ## Stride speed (radians per second at full walking speed).
 const STRIDE := {"person": 10.0, "wolf": 14.0, "troll": 6.5, "chibi": 13.0, "fluffox": 15.0,
-	"pebblet": 9.0, "slime": 7.0, "shroom": 12.0, "bat": 6.0, "boss": 4.0}
+	"pebblet": 9.0, "slime": 7.0, "shroom": 12.0, "bat": 6.0, "boss": 4.0, "sprite": 9.0}
 
 var body: Node3D
 var joints := {}
@@ -20,6 +20,7 @@ var sprites: Array[Sprite3D] = []
 var name_label: Label3D
 var bubble: SpeechBubble
 var hp_bar: MeshInstance3D
+var show_hp := true
 var _hp_mat: ShaderMaterial
 var _hp_value := 1.0
 var _hp_trail := 1.0
@@ -28,6 +29,8 @@ var windup_target := 0.0
 var busy := false
 var height := 1.8
 var rig_kind := ""
+## -1 when the flat art of a sprite beast looks left, so it can turn to face you.
+var art_flip := 1.0
 var arm_swing := 1.0
 ## Set while this figure is in a conversation: head bobs, hands gesture.
 var talking := false
@@ -55,6 +58,7 @@ func setup(tex: Texture2D, rig: Dictionary, world_h: float, label: String, font:
 	_t = randf() * 10.0
 	_phase = randf() * TAU
 	rig_kind = rig["kind"]
+	art_flip = float(rig.get("flip", 1.0))
 	arm_swing = rig.get("arm_swing", 1.0)
 	add_child(_blob(world_h))
 	add_view("side", tex, rig)
@@ -168,7 +172,7 @@ func _label(font: Font, text: String, size: int) -> Label3D:
 func _make_hp_bar() -> MeshInstance3D:
 	var mi := MeshInstance3D.new()
 	var q := QuadMesh.new()
-	q.size = Vector2(0.98, 0.2)
+	q.size = Vector2(0.9, 0.17)
 	mi.mesh = q
 	_hp_mat = ShaderMaterial.new()
 	_hp_mat.shader = preload("res://shaders/bar.gdshader")
@@ -217,6 +221,7 @@ func animate(delta: float, moving: float) -> void:
 	var sx := _turn
 	if absf(sx) < 0.06:
 		sx = 0.06 if facing > 0.0 else -0.06
+	sx *= art_flip
 	var swing := sin(_phase) * _amp
 	var bob := absf(sin(_phase)) * _amp
 	var breathe := sin(_t * 2.2) * 0.012
@@ -296,6 +301,13 @@ func animate(delta: float, moving: float) -> void:
 			_rot("near_wing", flap * 0.55)
 			body.position.y = 0.9 + sin(_t * 3.0) * 0.14 + flap * 0.04
 			body.rotation.z = -swing * 0.1
+		"sprite":
+			# flat monster art: a hop while walking, a breath at rest, a squash before a lunge
+			var hopf := absf(sin(_phase))
+			body.position.y = hopf * 0.16 * _amp
+			var sqz := 1.0 + sin(_t * 2.4) * 0.018 - _windup * 0.1 + lk * 0.08
+			body.scale = Vector3(sx * (2.0 - sqz), sqz, 1.0)
+			body.rotation.z = -swing * 0.07 - facing * art_flip * lk * 0.2 + facing * art_flip * _windup * 0.12
 		"wolf", "fluffox":
 			var reach := lk * 0.7 - _windup * 0.3
 			_rot("far_back", swing * 0.6 - reach * 0.6)
@@ -358,7 +370,7 @@ func say(text: String, secs: float = 3.0, fill := Color(0.99, 0.985, 0.96), styl
 	if quiet and not talking:
 		return
 	bubble.show_text(text, secs, style, fill)
-	Sfx.play("pop", -6.0)
+	Sfx.play_at("pop", global_position, -6.0)
 
 
 func flash() -> void:
@@ -370,7 +382,7 @@ func lunge() -> void:
 
 
 func set_hp(frac: float) -> void:
-	var show := frac < 0.999 and not _dead
+	var show := frac < 0.999 and not _dead and show_hp
 	hp_bar.visible = show
 	var f := clampf(frac, 0.0, 1.0)
 	if f < _hp_value - 0.001:
