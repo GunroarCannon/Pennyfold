@@ -126,6 +126,8 @@ var gathers: Array = []
 var discovered := {}
 var player: Dictionary = {}
 var player_view: Standee
+## The shared world connection (null when playing offline).
+var net: Net
 var rig_cache := {}
 var prompt := ""
 var clock := 0.0
@@ -201,6 +203,14 @@ func _ready() -> void:
 	cute = Game.cute()
 	font = load(FONT_PATH)
 	rng.seed = _seed_from_args()
+	net = Net.new()
+	add_child(net)
+	if await net.join(self):
+		rng.seed = net.seed_value
+		clock = net.clock_value
+	else:
+		net.queue_free()
+		net = null
 	shot_path = _arg_value("--shot=")
 	if _arg_value("--frames=") != "":
 		shot_frames = int(_arg_value("--frames="))
@@ -293,6 +303,9 @@ func _ready() -> void:
 	if not Game.started:
 		hud.show_title()
 	ready_done = true
+	if net != null:
+		net.flush_pending()
+		Economy.message.emit("Shared world: other players appear here. Enter to chat.")
 	Boot.finish()
 
 
@@ -1166,6 +1179,8 @@ func apply_hero() -> void:
 	if old != null:
 		old.queue_free()
 	career.apply_stats(self, true)
+	if net != null:
+		net.send_look()
 
 
 func _make_standee(baked: Dictionary, h: float, label: String) -> Standee:
@@ -2290,7 +2305,7 @@ func _update_player(delta: float) -> void:
 	if player.get("down", false):
 		player["moving"] = 0.0
 		return
-	var busy := hud.blocking()
+	var busy := hud.blocking() or (net != null and net.typing)
 	var dir := Vector2.ZERO if busy else Input.get_vector("move_left", "move_right", "move_up", "move_down")
 	var move := _cam_right() * dir.x + _cam_forward() * (-dir.y)
 	player["moving"] = 1.0 if move.length() > 0.05 else 0.0
@@ -3695,6 +3710,8 @@ func _find_nearby() -> void:
 
 
 func _sync_views(delta: float) -> void:
+	if net != null:
+		net.tick(delta, player["pos"], player["move_dir"])
 	var right := _cam_right()
 	var pp: Vector2 = player["pos"]
 	player_view.position = Bend.at(_to3(pp)) + Vector3(0, float(player["z"]), 0)
