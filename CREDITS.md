@@ -56,3 +56,8 @@ CC0 (public domain) cardboard photographs, resized for the game.
 
 ## Icon (`assets/icon.png`)
 Made for this project: the board texture above, a gold coin and a folded corner.
+
+## Music (`assets/music/`)
+- "Woodland Fantasy" and "Happy Flutes" (the original file was named `tkucza-happyflutes`).
+  Converted to Ogg Vorbis. The author and licence are not recorded in this repo:
+  confirm both, and add the credit line the licence needs, before a public release.

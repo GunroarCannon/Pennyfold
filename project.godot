@@ -27,6 +27,7 @@ Game="*res://scripts/game.gd"
 Chain="*res://scripts/chain.gd"
 Sfx="*res://scripts/sfx.gd"
 Boot="*res://scripts/boot.gd"
+Music="*res://scripts/music.gd"
 
 [display]
 
