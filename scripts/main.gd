@@ -331,7 +331,7 @@ func _apply_debug_args() -> void:
 			_add_monster("bat", Vector2(player["pos"]) + Vector2(-220, -30))
 			_add_monster("shroom", Vector2(player["pos"]) + Vector2(-140, 20))
 			player["heading"] = -_cam_right()
-			_player_dragon.call_deferred()
+			get_tree().create_timer(1.0).timeout.connect(_player_dragon)
 		"talk":
 			var n: Npc = npcs[1]
 			n.pos = Vector2(player["pos"]) + Vector2(70, -20)
@@ -1673,6 +1673,12 @@ func quest_done(q: Dictionary) -> void:
 func _unhandled_input(ev: InputEvent) -> void:
 	if not ready_done:
 		return
+	if dialog_npc != null and ev is InputEventKey and ev.pressed and not ev.echo:
+		var k: int = ev.keycode
+		if k >= KEY_1 and k <= KEY_5:
+			hud.pick_choice(k - KEY_0)
+			get_viewport().set_input_as_handled()
+			return
 	if ev is InputEventMouseMotion and Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT):
 		cam_yaw -= ev.relative.x * 0.008
 		cam_pitch = clampf(cam_pitch + ev.relative.y * 0.004, 0.18, 1.15)
@@ -1829,6 +1835,10 @@ func _update_player(delta: float) -> void:
 	if Input.is_action_just_pressed("cancel"):
 		hud.close_all()
 		_close_dialog()
+	if dialog_npc != null:
+		var dn := dialog_npc
+		if not npcs.has(dn) or dn.inside or dn.pos.distance_to(player["pos"]) > 260.0 or not hud.dialog_panel.visible:
+			_close_dialog()
 	if Input.is_action_just_pressed("keys"):
 		hud.toggle_keys()
 	if Input.is_action_just_pressed("style"):
@@ -2175,6 +2185,15 @@ func _player_dragon() -> void:
 func _open_dialog(n: Npc) -> void:
 	dialog_npc = n
 	n.view.talking = true
+	Standee.quiet = true
+	for o in npcs:
+		if o != n and o.view != null and o.view.bubble != null:
+			o.view.bubble.hide_bubble()
+	for m in monsters:
+		if m.view != null and m.view.bubble != null:
+			m.view.bubble.hide_bubble()
+	if player_view != null and player_view.bubble != null:
+		player_view.bubble.hide_bubble()
 	n.moving = 0.0
 	var face := (Vector2(player["pos"]) - n.pos).normalized()
 	n.facing = signf(face.dot(_cam_right())) if absf(face.dot(_cam_right())) > 0.05 else n.facing
@@ -2183,6 +2202,8 @@ func _open_dialog(n: Npc) -> void:
 
 
 func _close_dialog() -> void:
+	Standee.quiet = false
+	hud.close_dialog()
 	if dialog_npc != null:
 		dialog_npc.view.talking = false
 		dialog_npc.view.bubble.hide_bubble()
@@ -2197,7 +2218,7 @@ func _talk_line(n: Npc) -> String:
 	if n.job_id != "":
 		var place: String = building(n.job_id)["name"]
 		var till := int(Economy.wallets[n.job_id]["coins"]) if Economy.wallets.has(n.job_id) else 0
-		return "I am %s, %s at the %s. %s I have %d coins, the %s has %d in the till." % [n.display_name, n.job_title.to_lower(), place, mood, coins, place, till]
+		return "I am %s, %s at the %s. %s I have %d coin%s, the %s has %d in the till." % [n.display_name, n.job_title.to_lower(), place, mood, coins, "" if coins == 1 else "s", place, till]
 	return "I am %s. No steady work for me. %s %d coins to my name." % [n.display_name, mood, coins]
 
 
@@ -2217,7 +2238,9 @@ func _talk_options(n: Npc) -> Array:
 
 func dialog_choice(opt: Dictionary) -> void:
 	var n := dialog_npc
-	if n == null:
+	if n == null or not is_instance_valid(n.view):
+		# the speaker is gone: never leave the choices stuck on screen
+		_close_dialog()
 		return
 	if opt.has("quest"):
 		if quests.accept(self, opt["quest"]):
@@ -2226,13 +2249,11 @@ func dialog_choice(opt: Dictionary) -> void:
 			hud.set_dialog_text("Sorry, we cannot afford help right now.", [{"text": "Bye.", "bye": true}])
 	elif opt.has("shop"):
 		_close_dialog()
-		hud.close_dialog()
 		hud.open_shop(opt["shop"])
 	elif opt.has("gossip"):
 		hud.set_dialog_text(_gossip(n), _talk_options(n))
 	else:
 		_close_dialog()
-		hud.close_dialog()
 
 
 func _gossip(n: Npc = null) -> String:
@@ -2390,7 +2411,6 @@ func _resolve_deaths() -> void:
 			npcs.erase(n)
 			if n == dialog_npc:
 				_close_dialog()
-				hud.close_dialog()
 			n.view.fall()
 			var cause := "starved" if n.last_hurt_by == "" else "was killed by a monster"
 			var estate := int(Economy.wallets[n.id]["coins"])

@@ -85,6 +85,8 @@ var _fog_t := 0.0
 var _dialog_text: Label
 var _dialog_opts: VBoxContainer
 var _dialog_name: Label
+var _settle_status: Label
+var _dialog_choices: Array = []
 var _shown_coins := -1
 var _pack_sig := ""
 
@@ -210,6 +212,43 @@ func _button(text: String, bg := PAPER_LIGHT) -> Button:
 	b.add_theme_stylebox_override("hover", h)
 	b.add_theme_stylebox_override("pressed", pr)
 	b.add_theme_stylebox_override("disabled", d)
+	b.mouse_entered.connect(func() -> void: Sfx.play("tick", -4.0, 0.06))
+	b.pressed.connect(func() -> void: Sfx.play("click"))
+	return b
+
+
+## One answer in a conversation: a loose slip of paper with its key number
+## written in front, a pen-drawn arrow when hovered. "Bye" slips sit plainer.
+func _choice(n: int, text: String, bye := false) -> Button:
+	var b := Button.new()
+	b.text = "%d   %s" % [n, text]
+	b.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	b.autowrap_mode = TextServer.AUTOWRAP_WORD
+	b.focus_mode = Control.FOCUS_NONE
+	b.custom_minimum_size = Vector2(300, 0)
+	b.add_theme_font_override("font", head_font)
+	b.add_theme_font_size_override("font_size", 18)
+	for c in ["font_color", "font_hover_color", "font_pressed_color"]:
+		b.add_theme_color_override(c, INK)
+	var base := PAPER_LIGHT if not bye else NOTE.darkened(0.04)
+	var n_sb := _style(base, 2)
+	n_sb.torn = CardBox.LEFT
+	n_sb.rip = 4.0
+	n_sb.tape = 0
+	n_sb.shadow = Vector2(1, 2)
+	n_sb.content_margin_left = 16
+	n_sb.content_margin_right = 12
+	n_sb.content_margin_top = 5
+	n_sb.content_margin_bottom = 7
+	var h := n_sb.tinted(GOLD.lightened(0.35))
+	h.shift = Vector2(5, 0)
+	h.shadow = Vector2(3, 3)
+	var pr := n_sb.tinted(GOLD)
+	pr.shift = Vector2(8, 2)
+	pr.shadow = Vector2.ZERO
+	b.add_theme_stylebox_override("normal", n_sb)
+	b.add_theme_stylebox_override("hover", h)
+	b.add_theme_stylebox_override("pressed", pr)
 	b.mouse_entered.connect(func() -> void: Sfx.play("tick", -4.0, 0.06))
 	b.pressed.connect(func() -> void: Sfx.play("click"))
 	return b
@@ -812,17 +851,25 @@ func set_dialog_text(text: String, opts: Array) -> void:
 		tw.tween_property(_dialog_text, "visible_ratio", 1.0, clampf(text.length() * 0.018, 0.3, 2.0))
 	for c in _dialog_opts.get_children():
 		c.queue_free()
+	_dialog_choices = opts.duplicate()
+	var i := 0
 	for o in opts:
-		var b := _button(o["text"])
-		b.alignment = HORIZONTAL_ALIGNMENT_LEFT
-		b.autowrap_mode = TextServer.AUTOWRAP_WORD
-		b.custom_minimum_size = Vector2(300, 0)
+		i += 1
+		var b := _choice(i, o["text"], bool(o.get("bye", false)))
 		b.pressed.connect(main.dialog_choice.bind(o))
 		_dialog_opts.add_child(b)
 
 
+## Presses choice number `n` (1-based) while a conversation is open.
+func pick_choice(n: int) -> void:
+	if not dialog_panel.visible or n < 1 or n > _dialog_choices.size():
+		return
+	main.dialog_choice(_dialog_choices[n - 1])
+
+
 func close_dialog() -> void:
 	dialog_panel.visible = false
+	_dialog_choices = []
 
 
 # ---------- map ----------
@@ -967,12 +1014,18 @@ func _build_ledger() -> void:
 	var lv := VBoxContainer.new()
 	lv.add_theme_constant_override("separation", 10)
 	ledger_panel.add_child(lv)
+	var what := _label("SETTLING THE DAY: every purchase, sale and wage so far is netted into one transfer per pair of wallets and sent to NEAR.", 16)
+	what.autowrap_mode = TextServer.AUTOWRAP_WORD
+	what.custom_minimum_size = Vector2(560, 0)
+	lv.add_child(what)
+	_settle_status = _label("", 17, Color(0.55, 0.30, 0.05))
+	lv.add_child(_settle_status)
 	ledger_label = _label("", 16)
 	lv.add_child(ledger_label)
 	var lr := HBoxContainer.new()
 	lr.add_theme_constant_override("separation", 10)
 	lv.add_child(lr)
-	var b1 := _button("Settle day now (NEAR)", GOLD)
+	var b1 := _button("Settle day: send coins to NEAR", GOLD)
 	b1.pressed.connect(func() -> void: Chain.settle_now(main))
 	lr.add_child(b1)
 	var b2 := _button("Last transaction")
@@ -981,6 +1034,28 @@ func _build_ledger() -> void:
 	var b3 := _button("Open NearBlocks")
 	b3.pressed.connect(func() -> void: Chain.open_explorer())
 	lr.add_child(b3)
+
+
+## One plain line saying where the day's settlement stands.
+func _settle_line() -> String:
+	if Chain.mode == "offline":
+		return "No relayer found, so coins stay in the local ledger. Start one with: node server/relayer.mjs"
+	for e in Chain.day_log:
+		if e["status"] == "sending":
+			return "Sending to NEAR..."
+	var waiting := Chain.pending.size()
+	var last := ""
+	for i in range(Chain.day_log.size() - 1, -1, -1):
+		var e: Dictionary = Chain.day_log[i]
+		if e["status"] == "settled":
+			last = "   Last settled: day %d, %d transfers." % [int(e["day"]), int(e["flows"])]
+			break
+		if e["status"] == "failed":
+			last = "   Last attempt failed. Press the button to retry."
+			break
+	if waiting == 0:
+		return "Nothing waiting to settle: trade something first." + last
+	return "%d coin moves waiting to be settled.%s" % [waiting, last]
 
 
 func toggle_ledger() -> void:
@@ -1037,7 +1112,7 @@ func close_all() -> void:
 
 ## Big popups hide the tutorial card so they never overlap.
 func blocking_overlay() -> bool:
-	return shop_panel.visible or map_panel.visible or quest_panel.visible
+	return shop_panel.visible or map_panel.visible or quest_panel.visible or dialog_panel.visible
 
 
 func blocking() -> bool:
@@ -1050,6 +1125,7 @@ func refresh(world, delta: float) -> void:
 	for c in [compass, clock_tag, minimap, tracker, log_panel, prompt_panel, keys_panel, chain_chip]:
 		c.visible = started
 	status_card.visible = started
+	keys_panel.visible = started and not dialog_panel.visible
 	if started and not _tut_started and Game.wants_tutorial():
 		_tut_started = true
 		tutorial = Tutorial.new(self)
@@ -1057,7 +1133,7 @@ func refresh(world, delta: float) -> void:
 	if tutorial != null:
 		tutorial.visible = not blocking_overlay()
 		tutorial.update(world, delta)
-		tutorial.position = Vector2(vs.x * 0.5 - tutorial.size.x * 0.5, 92)
+		tutorial.position = Vector2(14.0, 200.0)
 	overlay.queue_redraw()
 	if not started:
 		return
@@ -1142,6 +1218,7 @@ func refresh(world, delta: float) -> void:
 		if _ledger_t <= 0.0:
 			_ledger_t = 0.5
 			ledger_label.text = _ledger_text(world)
+			_settle_status.text = _settle_line()
 		ledger_panel.position = Vector2(vs.x * 0.5 - ledger_panel.size.x * 0.5, 80)
 
 
@@ -1552,23 +1629,27 @@ class RoundMap:
 class NearChip:
 	extends Control
 	var hud: Hud
-	var _sb := StyleBoxFlat.new()
+	var _card: CardBox
 	var _text := ""
 
 	func _init() -> void:
 		mouse_filter = Control.MOUSE_FILTER_STOP
 		mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-		_sb.set_corner_radius_all(13)
-		_sb.set_border_width_all(2)
-		_sb.border_color = Hud.INK
-		_sb.anti_aliasing = true
+		_card = CardBox.new(Hud.NOTE, 77, 0.0)
+		_card.torn = CardBox.LEFT
+		_card.rip = 5.0
+		_card.cut = 4.0
+		_card.line = 1.8
+		_card.tape = 0
+		_card.shadow = Vector2(1, 2)
 		tooltip_text = "NEAR settlement status - click for the ledger"
 
 	func refresh() -> void:
 		_text = Chain.chip_text()
-		var w := get_theme_default_font().get_string_size(_text, HORIZONTAL_ALIGNMENT_LEFT, -1, 14).x + 46.0
-		custom_minimum_size = Vector2(w, 26)
-		size = Vector2(w, 26)
+		var font: Font = Hud.head_font_static
+		var w := font.get_string_size(_text, HORIZONTAL_ALIGNMENT_LEFT, -1, 15).x + 52.0
+		custom_minimum_size = Vector2(w, 28)
+		size = Vector2(w, 28)
 		queue_redraw()
 
 	func _gui_input(ev: InputEvent) -> void:
@@ -1576,22 +1657,29 @@ class NearChip:
 			hud.toggle_ledger()
 
 	func _draw() -> void:
-		_sb.bg_color = Hud.NOTE
-		draw_style_box(_sb, Rect2(Vector2.ZERO, size))
-		var col := Color(0.62, 0.62, 0.6)
+		draw_style_box(_card, Rect2(Vector2.ZERO, size))
+		var col := Color(0.55, 0.52, 0.48)
 		match Chain.mode:
 			"testnet":
-				col = Color(0.30, 0.78, 0.40)
+				col = Color(0.26, 0.62, 0.30)
 			"dry-run":
-				col = Color(0.96, 0.72, 0.22)
+				col = Color(0.88, 0.52, 0.12)
 		var busy := false
 		for e in Chain.day_log:
 			if e["status"] == "sending":
 				busy = true
-		var pr := 6.0 + (2.0 * sin(Time.get_ticks_msec() * 0.012) if busy else 0.0)
-		draw_circle(Vector2(15, 13), pr + 1.5, Hud.INK)
-		draw_circle(Vector2(15, 13), pr, col)
-		draw_string(get_theme_default_font(), Vector2(30, 18), _text, HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Hud.INK)
+		var r := 7.0 + (1.5 * sin(Time.get_ticks_msec() * 0.012) if busy else 0.0)
+		var c := Vector2(20, 14)
+		# a marker blot with a loose pen ring, like a stamp pad dab
+		for k in 7:
+			var f := float(k) / 6.0
+			draw_line(c + Vector2(-r * 0.7 + f * r * 1.4, r * 0.8), c + Vector2(-r * 0.3 + f * r * 1.4, -r * 0.8), Color(col.r, col.g, col.b, 0.95), 3.0, true)
+		var ring := PackedVector2Array()
+		for k in 16:
+			var a := TAU * float(k) / 15.0 * 0.97
+			ring.append(c + Vector2(cos(a), sin(a)) * (r + 1.5 + sin(k * 2.3) * 0.5))
+		draw_polyline(ring, Color(0.20, 0.13, 0.08, 0.85), 1.6, true)
+		draw_string(Hud.head_font_static, Vector2(34, 19), _text, HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Hud.INK)
 
 
 ## The title lettering: stamped paper letters that each sit a little crooked,

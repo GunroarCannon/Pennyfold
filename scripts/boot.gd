@@ -29,6 +29,8 @@ var _card: Control
 var _fade := 0.0
 var _closing := false
 var _kraft: Texture2D
+var _head: Font
+var _body: Font
 
 
 func _ready() -> void:
@@ -41,6 +43,8 @@ func _ready() -> void:
 	add_child(_card)
 	_card.visible = false
 	_kraft = load("res://assets/splash/kraft.png")
+	_head = load("res://assets/fonts/LilitaOne-Regular.ttf")
+	_body = load("res://assets/fonts/PatrickHand-Regular.ttf")
 
 
 ## Shows the card. `text` is the line under the plaque.
@@ -101,7 +105,7 @@ func _draw_card() -> void:
 		c.draw_texture_rect(_kraft, Rect2(Vector2.ZERO, vs), false)
 	else:
 		c.draw_rect(Rect2(Vector2.ZERO, vs), Color(0.74, 0.55, 0.34))
-	var head: Font = Hud.head_font_static if Hud.head_font_static != null else ThemeDB.fallback_font
+	var head: Font = _head if _head != null else ThemeDB.fallback_font
 	# the plaque
 	var w := minf(vs.x * 0.7, 720.0)
 	var h := minf(vs.y * 0.3, 210.0)
@@ -125,23 +129,28 @@ func _draw_card() -> void:
 	var bw := minf(vs.x * 0.6, 560.0)
 	var bh := 30.0
 	var bar := Rect2(Vector2(vs.x * 0.5 - bw * 0.5, vs.y * 0.64), Vector2(bw, bh))
-	_pill(c, bar)
-	var fw := maxf(10.0, (bar.size.x - 12.0) * _shown)
-	var x := bar.position.x + 8.0
-	var pts := PackedVector2Array()
-	var up := true
+	# a pencil underline for the track, marker hatching for the progress
+	for pass_i in 2:
+		var ul := PackedVector2Array()
+		for k in 18:
+			var f := float(k) / 17.0
+			ul.append(Vector2(lerpf(bar.position.x, bar.end.x, f), bar.end.y + 3.0 + pass_i * 1.5 + _jitter(k, pass_i) * 1.0))
+		c.draw_polyline(ul, Color(0.2, 0.12, 0.06, 0.75 - pass_i * 0.3), 2.0, true)
+	var x1 := bar.position.x + maxf(12.0, bar.size.x * _shown)
+	var xx := bar.position.x
 	var i := 0
-	while x < bar.position.x + 6.0 + fw:
-		pts.append(Vector2(x + _jitter(i) * 1.2, bar.position.y + (6.0 if up else bh - 6.0) + _jitter(i, 2.0) * 1.2))
-		up = not up
-		x += 7.0
+	while xx < x1:
+		var j1 := _jitter(i)
+		var j2 := _jitter(i, 3.0)
+		var a := Vector2(xx + j1, bar.end.y + 1.0 + (j2 * 0.5 + 0.5) * 2.0)
+		var b := Vector2(minf(xx + bar.size.y * 0.55 * (1.0 + j2 * 0.3), x1 + 2.0), bar.position.y - 1.0 - (j1 * 0.5 + 0.5) * 2.0)
+		c.draw_line(a, b, Color(0.12, 0.08, 0.05, 0.93), 4.6, true)
+		c.draw_circle(a, 2.2, Color(0.12, 0.08, 0.05, 0.93))
+		c.draw_circle(b, 2.2, Color(0.12, 0.08, 0.05, 0.93))
+		xx += 4.2 * (0.75 + 0.5 * (j1 * 0.5 + 0.5))
 		i += 1
-	if pts.size() > 1:
-		c.draw_polyline(pts, Color(0.12, 0.08, 0.05, 0.92), 8.0, true)
-		for p in pts:
-			c.draw_circle(p, 4.0, Color(0.12, 0.08, 0.05, 0.92))
 	# status and tip, in ink on the board
-	var body: Font = ThemeDB.fallback_font
+	var body: Font = _body if _body != null else ThemeDB.fallback_font
 	var dots := ".".repeat(int(_t * 2.5) % 4)
 	var status := _text + (dots if not _closing else "")
 	var sw := head.get_string_size(status, HORIZONTAL_ALIGNMENT_LEFT, -1, 26).x

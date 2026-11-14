@@ -29,3 +29,6 @@ reused here, not newly made for this hackathon:
 
 Godot Engine 4.7 (MIT). Node.js is used for the relayer (no npm packages).
 NEAR testnet and nearblocks.io are used for settlement and the explorer.
+
+## Dragon head (special attack)
+`assets/dragon_head_parts.png` is the red dragon head sheet from nirdia.com (CC BY-SA). The cut-outs in `assets/dragon/` are derived from it (outlined, textured and torn into cardboard pieces), so they carry the same CC BY-SA licence.

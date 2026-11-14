@@ -349,7 +349,14 @@ func _strike(rest: float, raise: float, chop: float) -> float:
 
 
 ## style: 0 round, 1 shout, 2 thought, 3 cut paper (default).
+## While a conversation is open, only the two people in it get to speak:
+## their bubbles are drawn on top of everything and would otherwise overprint.
+static var quiet := false
+
+
 func say(text: String, secs: float = 3.0, fill := Color(0.99, 0.985, 0.96), style := 3) -> void:
+	if quiet and not talking:
+		return
 	bubble.show_text(text, secs, style, fill)
 	Sfx.play("pop", -6.0)
 

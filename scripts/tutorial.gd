@@ -11,7 +11,8 @@ const STEPS := [
 	{"id": "dodge", "title": "Dodge", "text": "Press X to roll. You cannot be hurt mid-roll: dodge through an attack for a Perfect Dodge.", "keys": ["X"]},
 	{"id": "talk", "title": "Say hello", "text": "Walk up to a townsperson and press E to talk.", "keys": ["E"]},
 	{"id": "shop", "title": "Trade at a door", "text": "Stand at a shop door and press E. Every coin that changes hands is real ledger money.", "keys": ["E"]},
-	{"id": "ledger", "title": "See the ledger", "text": "Press Tab. The town's coins settle on NEAR; press Settle day now to send them to the chain.", "keys": ["Tab"]},
+	{"id": "ledger", "title": "Open the ledger", "text": "Press Tab. It lists every shop's coins, and everybody else's.", "keys": ["Tab"]},
+	{"id": "settle", "title": "Settle the day", "text": "In the ledger, press the gold button \"Settle day\". It bundles everything bought, sold and paid so far into NEAR transfers (buy or sell something first so there is something to send).", "keys": ["Tab"]},
 ]
 
 var hud: Hud
@@ -26,23 +27,28 @@ var _count: Label
 var _keys: HBoxContainer
 var _dots: HBoxContainer
 var _flash := 0.0
+var _ticks: Control
+var _log0 := 0
 
 
 func _init(p_hud: Hud) -> void:
 	hud = p_hud
 	var sb := hud._style(Hud.NOTE)
-	sb.set_content_margin_all(14)
+	sb.torn = CardBox.RIGHT
+	sb.rip = 6.0
+	sb.shadow = Vector2(2, 3)
+	sb.set_content_margin_all(12)
 	add_theme_stylebox_override("panel", sb)
-	custom_minimum_size = Vector2(430, 0)
+	custom_minimum_size = Vector2(340, 0)
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var vb := VBoxContainer.new()
 	vb.add_theme_constant_override("separation", 5)
 	add_child(vb)
 	var top := HBoxContainer.new()
 	vb.add_child(top)
-	_count = hud._label("1/6", 15, Hud.INK.lightened(0.35))
+	_count = hud._label("1/7", 15, Hud.INK.lightened(0.35))
 	top.add_child(_count)
-	_title = hud._label("", 26)
+	_title = hud._label("", 24)
 	_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	top.add_child(_title)
@@ -53,16 +59,14 @@ func _init(p_hud: Hud) -> void:
 	top.add_child(skip)
 	_text = hud._label("", 17)
 	_text.autowrap_mode = TextServer.AUTOWRAP_WORD
-	_text.custom_minimum_size = Vector2(400, 0)
+	_text.custom_minimum_size = Vector2(312, 0)
 	vb.add_child(_text)
 	_keys = HBoxContainer.new()
 	_keys.add_theme_constant_override("separation", 6)
 	_keys.alignment = BoxContainer.ALIGNMENT_CENTER
 	vb.add_child(_keys)
-	_dots = HBoxContainer.new()
-	_dots.add_theme_constant_override("separation", 6)
-	_dots.alignment = BoxContainer.ALIGNMENT_CENTER
-	vb.add_child(_dots)
+	_ticks = StepTicks.new(self)
+	vb.add_child(_ticks)
 	_show_step()
 
 
@@ -74,16 +78,22 @@ func _show_step() -> void:
 	for c in _keys.get_children():
 		c.queue_free()
 	for k in s["keys"]:
-		var cap := hud._tag(k, Hud.GOLD, 15)
-		cap.get_node("L").add_theme_font_override("font", hud.head_font)
+		# plain handwritten keys, underlined like the key strip at the bottom
+		var cap := PanelContainer.new()
+		var cs := StyleBoxFlat.new()
+		cs.bg_color = Color(1, 1, 1, 0.0)
+		cs.border_width_bottom = 2
+		cs.border_color = Hud.INK
+		cs.content_margin_left = 4
+		cs.content_margin_right = 4
+		cap.add_theme_stylebox_override("panel", cs)
+		cap.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		var cl := hud._label(k, 16)
+		cl.add_theme_font_override("font", hud.head_font)
+		cap.add_child(cl)
 		_keys.add_child(cap)
-	for c in _dots.get_children():
-		c.queue_free()
-	for i in STEPS.size():
-		var d := ColorRect.new()
-		d.custom_minimum_size = Vector2(22, 6)
-		d.color = Color(0.40, 0.72, 0.38) if i < idx else (Hud.GOLD if i == idx else Hud.INK.lightened(0.7))
-		_dots.add_child(d)
+	_log0 = Chain.day_log.size()
+	_ticks.queue_redraw()
 	reset_size()
 	pivot_offset = size * 0.5
 	scale = Vector2(0.85, 0.85)
@@ -114,6 +124,8 @@ func update(main, delta: float) -> void:
 			done = hud.shop_id != ""
 		"ledger":
 			done = hud.ledger_panel.visible
+		"settle":
+			done = Chain.day_log.size() > _log0 or Chain.mode == "offline"
 	if done:
 		_advance()
 
@@ -127,8 +139,7 @@ func _advance() -> void:
 		_count.text = ""
 		for c in _keys.get_children():
 			c.queue_free()
-		for c in _dots.get_children():
-			c.queue_free()
+		_ticks.visible = false
 		reset_size()
 		finished = true
 		get_tree().create_timer(6.0).timeout.connect(finish)
@@ -140,3 +151,30 @@ func finish() -> void:
 	Game.finish_tutorial()
 	hud.tutorial = null
 	queue_free()
+
+
+## A row of little hand-inked boxes, one per step: ticked when done, a marker
+## blot on the current one.
+class StepTicks:
+	extends Control
+	var tut: Tutorial
+
+	func _init(t: Tutorial) -> void:
+		tut = t
+		custom_minimum_size = Vector2(0, 22)
+		mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+	func _draw() -> void:
+		var n := Tutorial.STEPS.size()
+		var gap := minf(36.0, (size.x - 20.0) / float(n))
+		var x0 := size.x * 0.5 - gap * (n - 1) * 0.5
+		var ink := Color(0.20, 0.13, 0.08, 0.9)
+		for i in n:
+			var c := Vector2(x0 + gap * i, 11.0)
+			var box := PackedVector2Array([c + Vector2(-8, -7), c + Vector2(8, -8), c + Vector2(7, 8), c + Vector2(-8, 7), c + Vector2(-8, -7)])
+			draw_polyline(box, ink, 1.6, true)
+			if i < tut.idx:
+				draw_polyline(PackedVector2Array([c + Vector2(-6, 0), c + Vector2(-2, 5), c + Vector2(9, -9)]), Color(0.22, 0.55, 0.25), 3.0, true)
+			elif i == tut.idx:
+				for k in 4:
+					draw_line(c + Vector2(-6 + k * 3.5, 6), c + Vector2(-3 + k * 3.5, -6), Color(0.88, 0.52, 0.12, 0.95), 2.6, true)

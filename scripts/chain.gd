@@ -136,6 +136,9 @@ func settle_now(main: Node) -> void:
 		Economy.message.emit("No relayer found at %s. Start one with: node server/relayer.mjs" % url)
 		_send("GET", "/status", {}, "status")
 		return
+	if pending.is_empty():
+		Economy.message.emit("Nothing to settle yet. Buy, sell or get paid first, then settle the day.")
+		return
 	Economy.message.emit("Settling the town's coin flows on NEAR...")
 	end_of_day(main.day_number())
 

@@ -42,9 +42,15 @@ func _ready() -> void:
 	resized.connect(_layout)
 	_layout()
 	var straight := DisplayServer.get_name() == "headless"
+	var shot_mode := ""
 	for a in OS.get_cmdline_user_args():
-		if a.begins_with("--"):
+		if a.begins_with("--splash="):
+			shot_mode = a.substr(9)
+		elif a.begins_with("--"):
 			straight = true
+	if shot_mode != "":
+		_debug_shot(shot_mode)
+		return
 	if straight:
 		_start_game(false)
 		return
@@ -99,3 +105,22 @@ func _start_game(card := true) -> void:
 	await get_tree().process_frame
 	await get_tree().process_frame
 	get_tree().change_scene_to_file(GAME)
+
+
+## `--splash=boot|crack|load --shot=file.png`: renders one frame of the intro.
+func _debug_shot(mode: String) -> void:
+	var path := ""
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--shot="):
+			path = a.substr(7)
+	if mode == "crack":
+		_jolt()
+	elif mode == "load":
+		Boot.begin("Waking the townsfolk")
+		Boot.progress(0.6)
+		_pic.visible = false
+		_name.visible = false
+	for i in 40:
+		await get_tree().process_frame
+	get_viewport().get_texture().get_image().save_png(path)
+	get_tree().quit()
